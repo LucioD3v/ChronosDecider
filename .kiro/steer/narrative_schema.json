@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "action_type": { "type": "string" },
+    "target_branch": { "type": "string" },
+    "confidence_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "trigger_fallback": { "type": "boolean" },
+    "narrative_response": { "type": "string" },
+    "latency_ms": { "type": "number" }
+  },
+  "required": ["action_type", "target_branch", "confidence_score", "trigger_fallback", "narrative_response"]
+}

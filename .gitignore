@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Herramientas / IDE
+.pytest_cache/
+.mypy_cache/
+.coverage
+.idea/
+.vscode/
+
+# Kiro: ignora configuración local del IDE, pero versiona la carpeta de
+# arquitectura/esquema (.kiro/steer) que el código lee en runtime.
+.kiro/*
+!.kiro/steer/
+
+# Artefactos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Logs y temporales
+*.log
+_smoke_test.py
