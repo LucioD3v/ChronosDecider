@@ -54,9 +54,11 @@ def render_panel(result: EvaluationResult, summary: Optional[TelemetrySummary]) 
         f" Acción clasificada : {result.action_type}",
         f" Rama narrativa     : {result.target_branch}",
         f" Certeza            : {result.confidence_score:6.1%} {_bar(result.confidence_score)}",
-        f" Latencia           : {result.latency_ms:7.2f} ms  (objetivo < {LATENCY_TARGET_MS:.0f} ms) [{latency_flag}]",
+        f" Latencia decisión  : {result.decision_latency_ms:7.2f} ms  (objetivo < {LATENCY_TARGET_MS:.0f} ms) [{latency_flag}]",
+        f" Decisión vía       : {result.decision_source}",
+        f" Narrativa vía      : {result.narrative_source}",
         f" Fallback           : {fallback_flag}",
-        f" Respuesta GM       : {result.narrative_response}",
+        f" Respuesta GM       : {result.narrative_response or '(sin narrar: se pidió aclaración)'}",
     ]
 
     if summary is not None:

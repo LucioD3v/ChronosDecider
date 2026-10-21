@@ -1,29 +1,15 @@
-"""Tests del adaptador y el backend simulado (`decider_client`)."""
+"""Tests del cliente de decisión (`decider_client`)."""
 
 import unittest
 
 from src.engine.decider_client import (
     DeciderClient,
-    DeciderResponse,
+    DecisionResult,
     SimulatedDeciderBackend,
+    StrandsDeciderHTTPBackend,
 )
 
-
-class TestDeciderResponse(unittest.TestCase):
-    def test_to_payload_contiene_campos_del_esquema(self):
-        resp = DeciderResponse(
-            action_type="COMBAT",
-            target_branch="branch.combat",
-            confidence_score=0.92,
-            narrative_response="texto",
-        )
-        payload = resp.to_payload()
-        self.assertEqual(
-            set(payload.keys()),
-            {"action_type", "target_branch", "confidence_score",
-             "trigger_fallback", "narrative_response"},
-        )
-        self.assertFalse(payload["trigger_fallback"])
+_OPTIONS = ["combat", "dialogue", "exploration", "flee", "interaction"]
 
 
 class TestSimulatedBackend(unittest.TestCase):
@@ -31,55 +17,103 @@ class TestSimulatedBackend(unittest.TestCase):
         self.backend = SimulatedDeciderBackend()
 
     def test_accion_clara_alta_certeza(self):
-        r = self.backend.classify("atacar al goblin", {})
+        r = self.backend.decide_branch("atacar al goblin", _OPTIONS)
+        self.assertEqual(r.branch_id, "combat")
         self.assertEqual(r.action_type, "COMBAT")
-        self.assertEqual(r.target_branch, "branch.combat")
         self.assertGreater(r.confidence_score, 0.70)
+        self.assertEqual(r.source, "simulated")
 
     def test_keyword_ingles(self):
-        r = self.backend.classify("talk to the merchant", {})
-        self.assertEqual(r.action_type, "DIALOGUE")
+        r = self.backend.decide_branch("talk to the merchant", _OPTIONS)
+        self.assertEqual(r.branch_id, "dialogue")
 
-    def test_determinista_misma_entrada_misma_salida(self):
-        a = self.backend.classify("explorar la cueva", {})
-        b = self.backend.classify("explorar la cueva", {})
-        self.assertEqual(a.to_payload(), b.to_payload())
+    def test_determinista(self):
+        a = self.backend.decide_branch("explorar la cueva", _OPTIONS)
+        b = self.backend.decide_branch("explorar la cueva", _OPTIONS)
+        self.assertEqual((a.branch_id, a.confidence_score),
+                         (b.branch_id, b.confidence_score))
 
     def test_intenciones_mezcladas_bajan_certeza(self):
-        # "atacar" (COMBAT) + "huir" (FLEE) -> intención ambigua.
-        r = self.backend.classify("atacar y huir", {})
+        r = self.backend.decide_branch("atacar y huir", _OPTIONS)
         self.assertLessEqual(r.confidence_score, 0.70)
 
-    def test_entrada_vacia_certeza_cero(self):
-        r = self.backend.classify("", {})
-        self.assertEqual(r.action_type, "UNKNOWN")
+    def test_entrada_vacia_clarify(self):
+        r = self.backend.decide_branch("", _OPTIONS)
+        self.assertEqual(r.branch_id, "clarify")
         self.assertEqual(r.confidence_score, 0.0)
 
-    def test_intencion_desconocida_certeza_baja(self):
-        r = self.backend.classify("xyzzy plugh", {})
-        self.assertEqual(r.action_type, "UNKNOWN")
+    def test_desconocido_clarify_baja_certeza(self):
+        r = self.backend.decide_branch("xyzzy plugh", _OPTIONS)
+        self.assertEqual(r.branch_id, "clarify")
         self.assertLessEqual(r.confidence_score, 0.70)
 
+    def test_reporta_latencia(self):
+        r = self.backend.decide_branch("atacar", _OPTIONS)
+        self.assertGreaterEqual(r.decision_latency_ms, 0.0)
 
-class TestDeciderClient(unittest.TestCase):
-    def test_usa_backend_simulado_por_defecto(self):
-        client = DeciderClient()
-        r = client.classify("atacar", None)
+
+class TestHTTPBackendParsing(unittest.TestCase):
+    """Prueba el parseo de respuestas del servidor sin tocar la red."""
+
+    def setUp(self):
+        self.backend = StrandsDeciderHTTPBackend(base_url="http://localhost:9999")
+
+    def test_parse_choice_confidence(self):
+        payload = {"answers": {"narrative_branch": {"choice": "combat", "confidence": 0.83}},
+                   "latency_ms": 118.0}
+        r = self.backend._parse(payload, _OPTIONS, latency_ms=120.0)
+        self.assertEqual(r.branch_id, "combat")
         self.assertEqual(r.action_type, "COMBAT")
+        self.assertAlmostEqual(r.confidence_score, 0.83)
+        self.assertEqual(r.source, "strands-decider")
+        self.assertEqual(r.server_latency_ms, 118.0)
+        self.assertEqual(r.decision_latency_ms, 120.0)
 
-    def test_acepta_backend_personalizado(self):
+    def test_parse_probabilities_argmax(self):
+        payload = {"answers": {"narrative_branch": {
+            "probabilities": {"combat": 0.1, "dialogue": 0.75, "flee": 0.15}}}}
+        r = self.backend._parse(payload, _OPTIONS, latency_ms=10.0)
+        self.assertEqual(r.branch_id, "dialogue")
+        self.assertAlmostEqual(r.confidence_score, 0.75)
+
+    def test_parse_opcion_fuera_de_catalogo_es_clarify(self):
+        payload = {"answers": {"narrative_branch": {"choice": "teleport", "confidence": 0.99}}}
+        r = self.backend._parse(payload, _OPTIONS, latency_ms=10.0)
+        self.assertEqual(r.branch_id, "clarify")
+        self.assertEqual(r.confidence_score, 0.0)
+
+
+class TestDeciderClientFallback(unittest.TestCase):
+    def test_backend_inyectado_se_usa_tal_cual(self):
         class FakeBackend:
-            def classify(self, player_input, context):
-                return DeciderResponse(
-                    action_type="CUSTOM",
-                    target_branch="branch.x",
-                    confidence_score=0.5,
-                    narrative_response="fake",
+            def decide_branch(self, player_input, options):
+                return DecisionResult(
+                    branch_id="combat", action_type="COMBAT",
+                    confidence_score=0.9, source="fake", decision_latency_ms=1.0,
                 )
 
         client = DeciderClient(backend=FakeBackend())
-        r = client.classify("lo que sea")
-        self.assertEqual(r.action_type, "CUSTOM")
+        r = client.decide("lo que sea")
+        self.assertEqual(r.source, "fake")
+
+    def test_backend_inyectado_no_hace_fallback_silencioso(self):
+        class BrokenBackend:
+            def decide_branch(self, player_input, options):
+                raise ConnectionError("servidor caído")
+
+        client = DeciderClient(backend=BrokenBackend())
+        # Backend explícito -> el error se propaga, no cae al simulado.
+        with self.assertRaises(ConnectionError):
+            client.decide("atacar")
+
+    def test_fallback_a_simulado_cuando_servidor_no_responde(self):
+        # Sin backend inyectado, el primario es HTTP a un puerto cerrado;
+        # debe degradar al simulado sin lanzar excepción.
+        client = DeciderClient()
+        client._primary = StrandsDeciderHTTPBackend(base_url="http://127.0.0.1:9")
+        r = client.decide("atacar al goblin")
+        self.assertEqual(r.source, "simulated")
+        self.assertEqual(r.branch_id, "combat")
 
 
 if __name__ == "__main__":
