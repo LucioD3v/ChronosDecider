@@ -1,4 +1,4 @@
-"""Tests del validador estricto de esquema (`schema_validator`)."""
+"""Strict schema validator tests (`schema_validator`)."""
 
 import unittest
 
@@ -9,7 +9,7 @@ from src.engine.schema_validator import (
 
 
 def _valid_payload(**overrides):
-    """Construye un payload válido mínimo; `overrides` permite mutarlo."""
+    """Build a minimal valid payload; `overrides` lets you mutate it."""
     payload = {
         "action_type": "COMBAT",
         "target_branch": "branch.combat",
@@ -57,8 +57,8 @@ class TestSchemaValidator(unittest.TestCase):
         self.assertIsNotNone(validate_narrative_output(_valid_payload(confidence_score=1.0)))
 
     def test_booleano_no_es_numero_valido(self):
-        # confidence_score es "number"; un bool no debe colar aunque en Python
-        # bool sea subclase de int.
+        # confidence_score is "number"; a bool must not slip through even though
+        # in Python bool is a subclass of int.
         with self.assertRaises(SchemaValidationError):
             validate_narrative_output(_valid_payload(confidence_score=True))
 

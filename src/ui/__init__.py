@@ -1,8 +1,8 @@
 """
-UI / Demo RPG de ChronosDecider.
+ChronosDecider UI / RPG demo.
 
-CLI interactiva en tiempo real: el jugador introduce acciones y ve un panel
-con latencia, nivel de certeza y la rama narrativa elegida en cada turno.
+Real-time interactive CLI: the player enters actions and sees a panel with the
+latency, confidence level and chosen narrative branch on each turn.
 """
 
 from .cli_app import RPGConsoleApp, render_panel

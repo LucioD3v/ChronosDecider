@@ -1,10 +1,10 @@
 """
-Configuración central de ChronosDecider.
+Central configuration for ChronosDecider.
 
-Combina las reglas de la arquitectura (`.kiro/steer/system_architecture.md`) con
-la integración real: Strands Decider 2B (decisión) y Amazon Bedrock (generación).
-Los valores sensibles al entorno se leen de variables de entorno, con valores por
-defecto razonables para desarrollo local.
+Combines the architecture rules (`.kiro/steer/system_architecture.md`) with the
+real integration: Strands Decider 2B (decision) and Amazon Bedrock (generation).
+Environment-sensitive values are read from environment variables, with sensible
+defaults for local development.
 """
 
 from __future__ import annotations
@@ -12,47 +12,47 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# --- Rutas del proyecto -----------------------------------------------------
+# --- Project paths ----------------------------------------------------------
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
 
-# Esquema JSON que valida TODA salida del motor (regla 2 de la arquitectura).
+# JSON schema that validates ALL engine output (rule 2 of the architecture).
 NARRATIVE_SCHEMA_PATH: Path = PROJECT_ROOT / ".kiro" / "steer" / "narrative_schema.json"
 
-# --- Reglas del motor (ver system_architecture.md) --------------------------
-# Objetivo de latencia de la DECISIÓN, en milisegundos.
+# --- Engine rules (see system_architecture.md) ------------------------------
+# Target latency for the DECISION, in milliseconds.
 LATENCY_TARGET_MS: float = 100.0
 
-# Umbral de triage/Human-in-the-Loop:
-# si confidence_score <= este valor se activa el fallback (regla 3).
+# Triage / Human-in-the-Loop threshold:
+# if confidence_score <= this value, the fallback is triggered (rule 3).
 CONFIDENCE_FALLBACK_THRESHOLD: float = 0.70
 
-# --- Catálogo de ramas narrativas (opciones de la decisión "choice") --------
-# Cada entrada: id de rama -> (action_type, descripción corta para el narrador).
-# El conjunto de opciones se le pasa a Strands Decider como la pregunta tipada.
+# --- Narrative branch catalog (options for the "choice" decision) -----------
+# Each entry: branch id -> (action_type, short description for the narrator).
+# The option set is passed to Strands Decider as the typed question.
 NARRATIVE_BRANCHES: dict[str, tuple[str, str]] = {
-    "combat": ("COMBAT", "El jugador entra en combate."),
-    "dialogue": ("DIALOGUE", "El jugador conversa con un personaje."),
-    "exploration": ("EXPLORE", "El jugador explora o investiga el entorno."),
-    "flee": ("FLEE", "El jugador huye o evita el peligro."),
-    "interaction": ("INTERACT", "El jugador usa o manipula un objeto."),
+    "combat": ("COMBAT", "The player enters combat."),
+    "dialogue": ("DIALOGUE", "The player talks to a character."),
+    "exploration": ("EXPLORE", "The player explores or investigates the surroundings."),
+    "flee": ("FLEE", "The player flees or avoids danger."),
+    "interaction": ("INTERACT", "The player uses or manipulates an object."),
 }
 
-# Rama especial para cuando la decisión no es fiable (fallback).
+# Special branch for when the decision is not reliable (fallback).
 CLARIFY_BRANCH_ID: str = "clarify"
 
-# --- Strands Decider 2B (servidor local open source) ------------------------
-# El modelo se sirve con: `strands-decider serve <modelo> --port 8000`.
+# --- Strands Decider 2B (local open-source server) --------------------------
+# The model is served with: `strands-decider serve <model> --port 8000`.
 DECIDER_SERVER_URL: str = os.environ.get("CHRONOS_DECIDER_URL", "http://localhost:8000")
 DECIDER_SYSTEMONE_PATH: str = "/v1/systemone"
 DECIDER_MODEL_ID: str = os.environ.get(
     "CHRONOS_DECIDER_MODEL", "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610"
 )
-# Tiempo máximo de espera (s) para la llamada HTTP al servidor del modelo.
+# Maximum wait time (s) for the HTTP call to the model server.
 DECIDER_TIMEOUT_S: float = float(os.environ.get("CHRONOS_DECIDER_TIMEOUT", "5.0"))
 
-# --- Amazon Bedrock (generación de narrativa) -------------------------------
+# --- Amazon Bedrock (narrative generation) ----------------------------------
 BEDROCK_REGION: str = os.environ.get("CHRONOS_BEDROCK_REGION", "us-east-1")
-# Id del modelo generativo habilitado en tu cuenta (Model access en la consola).
-# Vacío por defecto: sin configurar, el motor usa el narrador de plantilla local.
+# Id of the generative model enabled in your account (Model access in the console).
+# Empty by default: when unset, the engine uses the local template narrator.
 BEDROCK_MODEL_ID: str = os.environ.get("CHRONOS_BEDROCK_MODEL_ID", "")
 BEDROCK_MAX_TOKENS: int = int(os.environ.get("CHRONOS_BEDROCK_MAX_TOKENS", "256"))

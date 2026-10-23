@@ -1,1 +1,1 @@
-"""Suite de tests unitarios de ChronosDecider (biblioteca estándar: unittest)."""
+"""ChronosDecider unit test suite (standard library: unittest)."""

@@ -1,4 +1,4 @@
-"""Tests del panel de telemetría (`telemetry_panel`)."""
+"""Telemetry panel tests (`telemetry_panel`)."""
 
 import unittest
 

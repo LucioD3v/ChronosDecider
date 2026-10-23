@@ -1,4 +1,4 @@
-"""Tests del motor de decisión (`decision_engine`): decisión + triage + generación."""
+"""Decision engine tests (`decision_engine`): decision + triage + generation."""
 
 import unittest
 
@@ -8,7 +8,7 @@ from src.engine.decision_engine import DecisionEngine
 
 
 class _StubDecider:
-    """Decider de prueba: devuelve una decisión fija (aísla la lógica del motor)."""
+    """Test Decider: returns a fixed decision (isolates the engine logic)."""
 
     def __init__(self, branch_id="combat", action_type="COMBAT", confidence=0.9):
         self._result = DecisionResult(
@@ -21,7 +21,7 @@ class _StubDecider:
 
 
 class _StubNarrator:
-    """Narrador de prueba: registra si fue llamado y devuelve texto fijo."""
+    """Test narrator: records whether it was called and returns fixed text."""
 
     def __init__(self):
         self.called = False

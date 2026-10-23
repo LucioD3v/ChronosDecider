@@ -1,4 +1,4 @@
-"""Tests del cliente de decisión (`decider_client`)."""
+"""Decision client tests (`decider_client`)."""
 
 import unittest
 
@@ -53,7 +53,7 @@ class TestSimulatedBackend(unittest.TestCase):
 
 
 class TestHTTPBackendParsing(unittest.TestCase):
-    """Prueba el parseo de respuestas del servidor sin tocar la red."""
+    """Tests the parsing of server responses without touching the network."""
 
     def setUp(self):
         self.backend = StrandsDeciderHTTPBackend(base_url="http://localhost:9999")
@@ -107,8 +107,8 @@ class TestDeciderClientFallback(unittest.TestCase):
             client.decide("atacar")
 
     def test_fallback_a_simulado_cuando_servidor_no_responde(self):
-        # Sin backend inyectado, el primario es HTTP a un puerto cerrado;
-        # debe degradar al simulado sin lanzar excepción.
+        # With no injected backend, the primary is HTTP to a closed port;
+        # it must degrade to the simulated one without raising.
         client = DeciderClient()
         client._primary = StrandsDeciderHTTPBackend(base_url="http://127.0.0.1:9")
         r = client.decide("atacar al goblin")

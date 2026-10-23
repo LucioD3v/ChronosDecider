@@ -6,27 +6,33 @@ __pycache__/
 build/
 dist/
 
-# Entornos virtuales
+# Virtual environments
 .venv/
 venv/
 env/
 
-# Herramientas / IDE
+# Tooling / IDE
 .pytest_cache/
 .mypy_cache/
 .coverage
 .idea/
 .vscode/
 
-# Kiro: ignora configuración local del IDE, pero versiona la carpeta de
-# arquitectura/esquema (.kiro/steer) que el código lee en runtime.
+# Kiro: ignore local IDE config, but version the architecture/schema folder
+# (.kiro/steer) that the code reads at runtime.
 .kiro/*
 !.kiro/steer/
 
-# Artefactos del sistema operativo
+# Operating-system artifacts
 .DS_Store
 Thumbs.db
 
-# Logs y temporales
+# Logs and temporaries
 *.log
 _smoke_test.py
+
+# Telemetry exported at runtime (do not version)
+chronosdecider_telemetry_*.json
+
+# Hackathon submission material (kept locally, not versioned)
+submission/

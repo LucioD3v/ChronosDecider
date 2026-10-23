@@ -1,124 +1,136 @@
-# ChronosDecider
+# ChronosDecider: The Narrative Time Weaver
+# ChronosDecider: The Narrative Time Weaver
 
-**Game Master agéntico en tiempo real** que usa **Strands Decider 2B** para decidir
-la rama narrativa de un RPG y **Amazon Bedrock** para narrarla. Objetivo de la
-decisión: sub-100ms.
+### A real-time RPG Game Master that knows when it doesn't know
 
-> Submission para la **Agent Experience Hackathon: Strands Decider**.
-> Patrón de decisión demostrado: **Tool selection** (`#tool-selection`).
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-unittest-brightgreen.svg)](tests/)
+[![Dependencies](https://img.shields.io/badge/deps-stdlib%20only-success.svg)](#requirements)
+[![Strands Decider 2B](https://img.shields.io/badge/model-strands--decider--2b-orange.svg)](https://github.com/strands-labs/strands-decider)
+[![Amazon Bedrock](https://img.shields.io/badge/AWS-Bedrock-FF9900.svg)](https://aws.amazon.com/bedrock/)
+
+ChronosDecider is an ultra-fast Game Master for real-time RPGs: it turns every player action into a calibrated narrative decision. Strands Decider 2B picks the story branch with a confidence it can measure in milliseconds, and Amazon Bedrock narrates it. When confidence drops below the threshold, the agent does not improvise: it fires a Human-in-the-Loop guardrail and asks for clarification. A decision engine that separates deciding from generating, with live latency and confidence telemetry.
+
+> Submission for the **Agent Experience Hackathon: Strands Decider**.
+> Decision pattern demonstrated: **Tool selection** (`#tool-selection`).
 > Tags: `#strands-decider-2b` `#tool-selection`
+>
+> Repository: https://github.com/LucioD3v/ChronosDecider
 
-## La idea en una frase
+## The idea in one sentence
 
-El jugador escribe una acción en lenguaje natural. **Decider 2B** elige, con una
-pregunta tipada `choice`, qué rama/herramienta narrativa corresponde y con qué
-confianza. Si la confianza es alta, **Bedrock** genera la narración de esa rama.
-Si es baja (`<= 0.70`), el agente **no inventa**: pide aclaración al jugador
-(Human-in-the-Loop).
+The player types an action in natural language. **Decider 2B** uses a typed
+`choice` question to pick which narrative branch (tool) applies and with what
+confidence. If confidence is high, **Bedrock** generates the narration for that
+branch. If it is low (`<= 0.70`), the agent **does not make things up**: it asks
+the player to clarify (Human-in-the-Loop).
 
-Esta es la separación de responsabilidades clave, alineada con el diseño del
-modelo ([Strands Decider no genera texto](https://github.com/strands-labs/strands-decider)):
+This is the key separation of concerns, aligned with the model's design
+([Strands Decider does not generate text](https://github.com/strands-labs/strands-decider)):
 
-| Pieza | Rol | Produce |
+| Component | Role | Produces |
 | --- | --- | --- |
-| **Strands Decider 2B** | Decisión | `choice` (rama) + `confidence_score` |
-| **Amazon Bedrock** | Generación | Texto narrativo del Game Master |
-| **Motor ChronosDecider** | Orquestación | Triage/fallback, validación, telemetría |
+| **Strands Decider 2B** | Decision | `choice` (branch) + `confidence_score` |
+| **Amazon Bedrock** | Generation | Game Master narrative text |
+| **ChronosDecider engine** | Orchestration | Triage/fallback, validation, telemetry |
 
-## Arquitectura
+## Architecture
 
-```
-Acción del jugador
-        │
-        ▼
-┌───────────────────────┐
-│  Strands Decider 2B   │  pregunta "choice": ¿qué rama narrativa?
-│  (decisión, ~115ms)   │  → target_branch + confidence_score
-└───────────┬───────────┘
-            │
-            ▼
-   ¿confidence > 0.70?
-       │          │
-   sí  │          │ no
-       ▼          ▼
-┌─────────────┐  ┌──────────────────────────┐
-│   Bedrock   │  │  Fallback Human-in-the-Loop │
-│ (narrativa) │  │  pide aclaración, no actúa  │
-└─────────────┘  └──────────────────────────┘
-       │
-       ▼
-   Telemetría (latencia de la decisión + historial de confianza)
+```mermaid
+flowchart TD
+    A[Player action<br/>free text] --> D{{"Strands Decider 2B<br/>choice question · ~115ms"}}
+    D -->|target_branch + confidence_score| T{confidence &gt; 0.70?}
+    T -->|yes| B["Amazon Bedrock<br/>generates the narrative"]
+    T -->|no| H["Human-in-the-Loop fallback<br/>asks to clarify · does not act"]
+    B --> TEL[["Telemetry<br/>decision latency + confidence history"]]
+    H --> TEL
+    TEL --> E[/"Export session to JSON"/]
 ```
 
-## Requisitos
+- **Decision** (Strands Decider 2B): picks the branch, generates no text.
+- **Generation** (Amazon Bedrock): narrates only when the decision is reliable.
+- **Guardrail**: confidence `<= 0.70` ⇒ no narration, clarification is requested.
 
-- **Python 3.10+** (probado con 3.14).
-- Para la decisión real: el paquete `strands-decider` (open source, Apache-2.0).
-- Para la generación real: una cuenta de **AWS con Amazon Bedrock** habilitado en
-  `us-east-1` y `boto3`.
+## Technology stack
 
-El proyecto **arranca sin ninguna de las dos** gracias a backends simulados, para
-desarrollo local y para que cualquiera pueda ejecutar la demo. Ver más abajo.
+| Layer | Technology | Why |
+| --- | --- | --- |
+| Decision | **Strands Decider 2B** (open source, Apache-2.0) | Calibrated `choice` in ~115ms, no text generation |
+| Generation | **Amazon Bedrock** (`us-east-1`, Converse API) | Game Master narration only when the decision is reliable |
+| Transport to Decider | **Python `urllib`** (stdlib) | Calls the local `/v1/systemone` server with zero extra deps |
+| AWS SDK | **boto3** (optional) | Invokes Bedrock; absent ⇒ local template narrator |
+| Orchestration, telemetry, UI, tests | **Python 3.10+ standard library** | No external runtime dependencies |
+
+## Requirements
+
+- **Python 3.10+** (tested with 3.14).
+- For real decisions: the `strands-decider` package (open source, Apache-2.0).
+- For real generation: an **AWS account with Amazon Bedrock** enabled in
+  `us-east-1`, plus `boto3`.
+
+The project **runs without either of them** thanks to simulated backends, for
+local development and so anyone can run the demo. See below.
 
 ---
 
-## Activar Strands Decider 2B
+## Enabling Strands Decider 2B
 
-Strands Decider 2B **no es un servicio gestionado de AWS**: es un modelo de código
-abierto publicado en Hugging Face (organización
-[`StrandsAgents`](https://huggingface.co/StrandsAgents), con espejo en
-[`amazon`](https://huggingface.co/amazon)) bajo licencia Apache-2.0. Corre en local
-sobre CPU, GPU de consumo o Apple Silicon. No hay que "activarlo" en la consola de
-AWS; se instala y se ejecuta.
+Strands Decider 2B is **not a managed AWS service**: it is an open-source model
+published on Hugging Face (the [`StrandsAgents`](https://huggingface.co/StrandsAgents)
+organization, mirrored under [`amazon`](https://huggingface.co/amazon)) under the
+Apache-2.0 license. It runs locally on CPU, a consumer GPU, or Apple Silicon.
+There is nothing to "enable" in the AWS console; you install and run it.
 
-Pasos (según la [guía oficial del repositorio](https://github.com/strands-labs/strands-decider)):
+Steps (per the [official repository guide](https://github.com/strands-labs/strands-decider)):
 
-**1. Instalar el CLI del modelo**
+**1. Install the model CLI**
 
 ```bash
 pip install strands-decider
 ```
 
-**2. Probar una decisión tipada `choice`** (la primera vez descarga los pesos desde
+**2. Try a typed `choice` decision** (the first run downloads the weights from
 Hugging Face):
 
 ```bash
 strands-decider ask StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 \
-  --state "Ataco al goblin con mi espada" \
-  --choice "¿Qué rama narrativa?=combat,dialogue,exploration,flee,interaction"
+  --state "I attack the goblin with my sword" \
+  --choice "Which narrative branch?=combat,dialogue,exploration,flee,interaction"
 ```
 
-La salida es la opción elegida con su confianza calibrada, p. ej.
+The output is the chosen option with its calibrated confidence, e.g.
 `choice_0 -> combat (confidence 0.83)`.
 
-**3. Levantar el servidor HTTP local** (lo que ChronosDecider consume):
+**3. Start the local HTTP server** (what ChronosDecider consumes):
 
 ```bash
 strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8000
 ```
 
-Expone `POST http://localhost:8000/v1/systemone`. ChronosDecider envía el estado
-(la acción del jugador) y una pregunta `choice`, y recibe la rama + confianza.
+This exposes `POST http://localhost:8000/v1/systemone`. ChronosDecider sends the
+state (the player's action) and a `choice` question, and receives the branch +
+confidence.
 
-> Nota de hardware: el checkpoint de referencia (`...-2B-qwen3.5-v1-2610`) tiene
-> 1.9B parámetros y sirve en CPU; en GPU la latencia mediana ronda los ~115ms.
-> En Apple Silicon usa el extra MLX. Detalles en la guía oficial.
+> Hardware note: the reference checkpoint (`...-2B-qwen3.5-v1-2610`) has 1.9B
+> parameters and serves on CPU; on GPU the median latency is around ~115ms. On
+> Apple Silicon use the MLX extra. See the official guide for details.
 
-Por defecto ChronosDecider apunta a `http://localhost:8000`. Puedes cambiarlo con
-la variable de entorno `CHRONOS_DECIDER_URL`.
+By default ChronosDecider points to `http://localhost:8000`. Override it with the
+`CHRONOS_DECIDER_URL` environment variable.
 
 ---
 
-## Activar Amazon Bedrock (us-east-1)
+## Enabling Amazon Bedrock (us-east-1)
 
-Bedrock **sí** se configura en tu cuenta de AWS. Pasos en la consola:
+Bedrock **does** need to be configured in your AWS account. Console steps:
 
-1. Inicia sesión en la **consola de AWS** y selecciona la región **US East (N. Virginia) `us-east-1`** (arriba a la derecha).
-2. Ve a **Amazon Bedrock → Model access** (Acceso a modelos).
-3. Pulsa **Enable specific models** / **Manage model access** y **habilita** el
-   modelo generativo que vayas a usar (por ejemplo, un modelo de Anthropic Claude o
-   Amazon Nova disponible en tu cuenta). La aprobación suele ser inmediata.
-4. Crea credenciales con permiso para invocar Bedrock. Política IAM mínima:
+1. Sign in to the **AWS console** and select the **US East (N. Virginia) `us-east-1`** region (top right).
+2. Go to **Amazon Bedrock → Model access**.
+3. Click **Enable specific models** / **Manage model access** and **enable** the
+   generative model you plan to use (for example an Anthropic Claude or Amazon
+   Nova model available in your account). Approval is usually immediate.
+4. Create credentials with permission to invoke Bedrock. Minimal IAM policy:
 
    ```json
    {
@@ -131,62 +143,103 @@ Bedrock **sí** se configura en tu cuenta de AWS. Pasos en la consola:
    }
    ```
 
-5. Configura las credenciales en tu entorno (una de estas):
+5. Configure the credentials in your environment (one of these):
 
    ```bash
-   aws configure            # perfil por defecto, región us-east-1
-   # o variables de entorno:
+   aws configure            # default profile, region us-east-1
+   # or environment variables:
    # setx AWS_ACCESS_KEY_ID ...    (Windows / PowerShell)
    # setx AWS_SECRET_ACCESS_KEY ...
    # setx AWS_DEFAULT_REGION us-east-1
    ```
 
-6. Indica a ChronosDecider qué modelo usar (id exacto del modelo habilitado):
+6. Tell ChronosDecider which model to use (exact id of the enabled model):
 
    ```bash
    # PowerShell
-   setx CHRONOS_BEDROCK_MODEL_ID "<id-del-modelo-habilitado>"
+   setx CHRONOS_BEDROCK_MODEL_ID "<enabled-model-id>"
    setx CHRONOS_BEDROCK_REGION  "us-east-1"
    ```
 
-> Si no configuras Bedrock, ChronosDecider usa un narrador local de plantilla para
-> que la demo siga funcionando; la narrativa será más simple pero el flujo es el mismo.
+> If you do not configure Bedrock, ChronosDecider falls back to a local template
+> narrator so the demo keeps working; the narrative is simpler but the flow is
+> identical.
 
 ---
 
-## Estructura del proyecto
+## Project structure
 
 ```
 ChronosDecider/
-├── main.py                       # Demo RPG interactiva por consola
+├── main.py                       # Interactive console RPG demo
 ├── src/
-│   ├── config.py                 # Umbrales, región, ids de modelo, endpoints
-│   ├── engine/                   # Decisión + orquestación
-│   │   ├── decider_client.py     # Cliente Strands Decider (HTTP real + simulado)
-│   │   ├── narrator.py           # Generación con Amazon Bedrock (+ fallback local)
-│   │   ├── schema_validator.py   # Validación estricta contra narrative_schema.json
-│   │   └── decision_engine.py    # decidir → triage → narrar → validar → telemetría
-│   ├── telemetry/                # Latencia por decisión + historial de confianza
-│   └── ui/                       # Demo RPG + panel de métricas en tiempo real
-├── decision_patterns/            # Patrón de decisión reutilizable (entregable)
-├── tests/                        # Suite unittest (sin dependencias externas)
-└── .kiro/steer/                  # Arquitectura y esquema (leídos en runtime)
+│   ├── config.py                 # Thresholds, region, model ids, endpoints
+│   ├── engine/                   # Decision + orchestration
+│   │   ├── decider_client.py     # Strands Decider client (real HTTP + simulated)
+│   │   ├── narrator.py           # Generation via Amazon Bedrock (+ local fallback)
+│   │   ├── schema_validator.py   # Strict validation against narrative_schema.json
+│   │   └── decision_engine.py    # decide → triage → narrate → validate → telemetry
+│   ├── telemetry/                # Per-decision latency + confidence history
+│   └── ui/                       # RPG demo + real-time metrics panel
+├── decision_patterns/            # Reusable decision pattern (deliverable)
+├── scripts/
+│   └── benchmark.py              # Latency and confidence-distribution benchmark
+├── tests/                        # unittest suite (no external dependencies)
+└── .kiro/steer/                  # Architecture and schema (read at runtime)
 ```
 
-## Ejecutar la demo
+## Running the demo
 
 ```bash
 python main.py
 ```
 
-Modo de ejecución según lo que tengas configurado:
+Execution mode depends on what you have configured:
 
-- **Sin nada configurado**: Decider simulado + narrador de plantilla. Funciona al 100% para probar el flujo.
-- **Con `strands-decider serve` activo**: decisiones reales del modelo.
-- **Con Bedrock configurado**: narrativa generada real.
+- **Nothing configured**: simulated Decider + template narrator. Fully functional for trying the flow.
+- **With `strands-decider serve` running**: real model decisions.
+- **With Bedrock configured**: real generated narrative.
 
-Escribe acciones como `atacar al goblin`, `hablar con el mercader`, `explorar la
-cueva`. Las acciones ambiguas disparan la aclaración (Human-in-the-Loop).
+Type actions like `attack the goblin`, `talk to the merchant`, `explore the
+cave`. Ambiguous actions trigger clarification (Human-in-the-Loop).
+
+**In-demo commands:**
+
+| Command | Action |
+| --- | --- |
+| `help` / `ayuda` / `?` | Show help and examples. |
+| `export` / `exportar` | Save the current session's metrics to a JSON file. |
+| `quit` / `exit` / `salir` | End the demo. |
+
+## Exporting telemetry
+
+During the demo, the `export` command writes a JSON with the aggregated summary
+and the full session history (per-turn latency and confidence, with timestamps):
+
+```
+[EXPORT] Session metrics saved to: .../chronosdecider_telemetry_<stamp>.json
+```
+
+Programmatically:
+
+```python
+engine.telemetry.export_json("telemetry.json")   # or .to_dict() for a dict
+```
+
+## Benchmark
+
+Measures decision latency and confidence distribution with the deterministic
+simulated backend (no model server or Bedrock required):
+
+```bash
+python scripts/benchmark.py            # text report (1000 iterations)
+python scripts/benchmark.py -n 5000    # custom iteration count
+python scripts/benchmark.py --json     # JSON output for CI/dashboards
+```
+
+It reports mean/min/max and **p50/p90/p95/p99** latency percentiles, the
+percentage within the `<100ms` target, a `confidence_score` histogram, and the
+percentage of turns that triggered the fallback.
 
 ## Tests
 
@@ -194,12 +247,12 @@ cueva`. Las acciones ambiguas disparan la aclaración (Human-in-the-Loop).
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-## Patrón de decisión reutilizable
+## Reusable decision pattern
 
-El entregable reutilizable de la hackathon está en
-[`decision_patterns/`](decision_patterns/): la pregunta tipada, el wiring para
-meterla en la ruta de un agente, y una nota de uso. Patrón: **tool selection**.
+The hackathon's reusable deliverable lives in
+[`decision_patterns/`](decision_patterns/): the typed question, the wiring to put
+it in an agent's path, and a usage note. Pattern: **tool selection**.
 
-## Licencia
+## License
 
-Apache-2.0 (ver [LICENSE](LICENSE)). Strands Decider 2B también es Apache-2.0.
+Apache-2.0 (see [LICENSE](LICENSE)). Strands Decider 2B is also Apache-2.0.

@@ -1,8 +1,8 @@
 """
-Patrones de decisión reutilizables para Strands Decider 2B.
+Reusable decision patterns for Strands Decider 2B.
 
-Entregable de la Agent Experience Hackathon: recetas de decisión que otro
-builder puede soltar en su propio agente. Ver README.md de esta carpeta.
+Deliverable for the Agent Experience Hackathon: decision recipes another builder
+can drop into their own agent. See this folder's README.md.
 """
 
 from .tool_selection import (

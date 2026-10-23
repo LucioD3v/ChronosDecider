@@ -1,9 +1,9 @@
 """
-Decision Engine de ChronosDecider.
+ChronosDecider Decision Engine.
 
-Separa la DECISIÓN (Strands Decider 2B) de la GENERACIÓN (Amazon Bedrock):
-el Decider elige la rama narrativa con confianza calibrada; el narrador la
-redacta. El motor orquesta triage/fallback, validación y telemetría.
+Separates the DECISION (Strands Decider 2B) from the GENERATION (Amazon Bedrock):
+the Decider picks the narrative branch with calibrated confidence; the narrator
+writes it. The engine orchestrates triage/fallback, validation and telemetry.
 """
 
 from .decider_client import (

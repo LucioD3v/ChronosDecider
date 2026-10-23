@@ -1,18 +1,18 @@
 """
-Narrador de ChronosDecider: la capa de GENERACIÓN.
+ChronosDecider narrator: the GENERATION layer.
 
-Una vez que Strands Decider 2B decide la rama narrativa, Amazon Bedrock genera el
-texto del Game Master para esa rama. Esta es la parte generativa del agente
-(Decider decide, Bedrock narra).
+Once Strands Decider 2B picks the narrative branch, Amazon Bedrock generates the
+Game Master's text for that branch. This is the generative part of the agent
+(Decider decides, Bedrock narrates).
 
-Expone:
-  * `Narrator`         : interfaz (Protocol) de un generador de narrativa.
-  * `BedrockNarrator`  : generación real vía boto3 (Amazon Bedrock, us-east-1).
-  * `TemplateNarrator` : fallback local de plantilla (sin credenciales ni boto3).
-  * `build_default_narrator()` : elige Bedrock si está configurado, si no plantilla.
+Exposes:
+  * `Narrator`         : interface (Protocol) of a narrative generator.
+  * `BedrockNarrator`  : real generation via boto3 (Amazon Bedrock, us-east-1).
+  * `TemplateNarrator` : local template fallback (no credentials, no boto3).
+  * `build_default_narrator()` : picks Bedrock if configured, else the template.
 
-boto3 es una dependencia OPCIONAL: solo se importa dentro de `BedrockNarrator`,
-para que el proyecto corra sin instalarla.
+boto3 is an OPTIONAL dependency: it is only imported inside `BedrockNarrator`,
+so the project runs without installing it.
 """
 
 from __future__ import annotations
@@ -29,23 +29,23 @@ from ..config import (
 
 @runtime_checkable
 class Narrator(Protocol):
-    """Contrato de un generador de narrativa."""
+    """Contract for a narrative generator."""
 
     def narrate(self, player_input: str, branch_id: str, action_type: str) -> str:
-        """Genera el texto narrativo del Game Master para la rama elegida."""
+        """Generate the Game Master's narrative text for the chosen branch."""
         ...
 
     @property
     def source(self) -> str:
-        """Identifica el origen de la narrativa ('bedrock' o 'template')."""
+        """Identify the narrative's origin ('bedrock' or 'template')."""
         ...
 
 
 class TemplateNarrator:
-    """Narrador local de plantilla (fallback sin Bedrock).
+    """Local template narrator (fallback without Bedrock).
 
-    Produce una narración simple pero coherente para que la demo funcione sin
-    credenciales de AWS. No usa red ni dependencias externas.
+    Produces a simple but coherent narration so the demo works without AWS
+    credentials. It uses no network and no external dependencies.
     """
 
     @property
@@ -53,19 +53,20 @@ class TemplateNarrator:
         return "template"
 
     def narrate(self, player_input: str, branch_id: str, action_type: str) -> str:
-        descripcion = NARRATIVE_BRANCHES.get(branch_id, ("", "una acción inesperada"))[1]
-        accion = player_input.strip() or "algo incierto"
+        description = NARRATIVE_BRANCHES.get(branch_id, ("", "an unexpected action"))[1]
+        action = player_input.strip() or "something uncertain"
         return (
-            f"El Game Master resuelve la rama '{branch_id}' ({action_type}). "
-            f"{descripcion} Ante «{accion}», la escena avanza y el mundo reacciona."
+            f"The Game Master resolves the '{branch_id}' branch ({action_type}). "
+            f"{description} Faced with \u00ab{action}\u00bb, the scene moves forward "
+            f"and the world reacts."
         )
 
 
 class BedrockNarrator:
-    """Narrador generativo real con Amazon Bedrock (boto3).
+    """Real generative narrator with Amazon Bedrock (boto3).
 
-    Usa la API Converse de bedrock-runtime, común a los modelos de chat de Bedrock.
-    `boto3` se importa aquí para que sea una dependencia opcional.
+    Uses the bedrock-runtime Converse API, common to Bedrock chat models.
+    `boto3` is imported here so it stays an optional dependency.
     """
 
     def __init__(
@@ -76,10 +77,10 @@ class BedrockNarrator:
     ) -> None:
         if not model_id:
             raise ValueError(
-                "BEDROCK_MODEL_ID vacío: configura CHRONOS_BEDROCK_MODEL_ID con el "
-                "id de un modelo habilitado en Bedrock (Model access)."
+                "BEDROCK_MODEL_ID is empty: set CHRONOS_BEDROCK_MODEL_ID to the "
+                "id of a model enabled in Bedrock (Model access)."
             )
-        import boto3  # Import local: dependencia opcional.
+        import boto3  # Local import: optional dependency.
 
         self._model_id = model_id
         self._max_tokens = max_tokens
@@ -90,14 +91,14 @@ class BedrockNarrator:
         return "bedrock"
 
     def _build_prompt(self, player_input: str, branch_id: str, action_type: str) -> str:
-        descripcion = NARRATIVE_BRANCHES.get(branch_id, ("", ""))[1]
+        description = NARRATIVE_BRANCHES.get(branch_id, ("", ""))[1]
         return (
-            "Eres el Game Master de un RPG en tiempo real. La decisión de la rama "
-            "narrativa ya está tomada; tu única tarea es narrarla en 2-3 frases, "
-            "en segunda persona y en español, sin ofrecer opciones ni listas.\n"
-            f"Acción del jugador: {player_input!r}\n"
-            f"Rama elegida: {branch_id} ({action_type}). {descripcion}\n"
-            "Narra el desenlace inmediato de esa acción:"
+            "You are the Game Master of a real-time RPG. The narrative branch has "
+            "already been decided; your only task is to narrate it in 2-3 "
+            "sentences, in the second person, without offering options or lists.\n"
+            f"Player action: {player_input!r}\n"
+            f"Chosen branch: {branch_id} ({action_type}). {description}\n"
+            "Narrate the immediate outcome of that action:"
         )
 
     def narrate(self, player_input: str, branch_id: str, action_type: str) -> str:
@@ -107,24 +108,24 @@ class BedrockNarrator:
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             inferenceConfig={"maxTokens": self._max_tokens, "temperature": 0.7},
         )
-        # Estructura estándar de la respuesta Converse.
+        # Standard Converse response structure.
         content = response["output"]["message"]["content"]
         text = "".join(part.get("text", "") for part in content).strip()
-        return text or "(el Game Master guarda silencio)"
+        return text or "(the Game Master stays silent)"
 
 
 def build_default_narrator() -> Narrator:
-    """Elige el narrador según la configuración disponible.
+    """Pick the narrator based on the available configuration.
 
-    - Si `BEDROCK_MODEL_ID` está configurado e `boto3` puede inicializarse, usa
+    - If `BEDROCK_MODEL_ID` is set and `boto3` can be initialized, use
       `BedrockNarrator`.
-    - En cualquier otro caso, cae al `TemplateNarrator` local, para que el agente
-      siga funcionando sin credenciales.
+    - In any other case, fall back to the local `TemplateNarrator`, so the agent
+      keeps working without credentials.
     """
     if BEDROCK_MODEL_ID:
         try:
             return BedrockNarrator()
         except Exception:
-            # boto3 ausente, credenciales mal configuradas, etc.: degradar sin romper.
+            # boto3 missing, credentials misconfigured, etc.: degrade without breaking.
             return TemplateNarrator()
     return TemplateNarrator()

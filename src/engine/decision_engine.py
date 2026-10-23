@@ -1,15 +1,15 @@
 """
-Motor de decisión de ChronosDecider.
+ChronosDecider decision engine.
 
-Flujo por turno (cumple las 4 reglas de `system_architecture.md` y separa
-decisión de generación):
+Per-turn flow (satisfies the 4 rules of `system_architecture.md` and separates
+decision from generation):
 
-  1. DECISIÓN: Strands Decider 2B elige la rama narrativa (pregunta `choice`) y
-     devuelve una confianza calibrada. Aquí se mide la latencia de la decisión.
-  2. TRIAGE: si `confidence_score <= 0.70` se activa el fallback (Human-in-the-Loop):
-     NO se narra, se pide aclaración.
-  3. GENERACIÓN: si la confianza es suficiente, Amazon Bedrock narra la rama.
-  4. VALIDACIÓN + TELEMETRÍA: la salida se valida contra el esquema y se registra.
+  1. DECISION: Strands Decider 2B picks the narrative branch (`choice` question)
+     and returns a calibrated confidence. Decision latency is measured here.
+  2. TRIAGE: if `confidence_score <= 0.70` the fallback (Human-in-the-Loop) is
+     triggered: it does NOT narrate, it asks for clarification.
+  3. GENERATION: if confidence is sufficient, Amazon Bedrock narrates the branch.
+  4. VALIDATION + TELEMETRY: the output is validated against the schema and logged.
 """
 
 from __future__ import annotations
@@ -20,20 +20,20 @@ from typing import Any, Dict, Optional
 from ..config import CONFIDENCE_FALLBACK_THRESHOLD, LATENCY_TARGET_MS
 from ..telemetry import TelemetryPanel
 from .decider_client import DeciderClient, DecisionResult
-from .narrator import Narrator, build_default_narrator
+from .narrator import Narrator, TemplateNarrator, build_default_narrator
 from .schema_validator import validate_narrative_output
 
 
 @dataclass
 class EvaluationResult:
-    """Resultado completo de un turno, listo para la UI y la telemetría."""
+    """Complete result of a turn, ready for the UI and telemetry."""
 
-    payload: Dict[str, Any]              # Salida validada conforme al esquema.
-    decision_latency_ms: float           # Latencia SOLO de la decisión (objetivo <100ms).
-    within_latency_target: bool          # ¿La decisión cumplió el objetivo?
-    decision_source: str                 # 'strands-decider' o 'simulated'.
-    narrative_source: str                # 'bedrock' o 'template'.
-    clarification_prompt: Optional[str] = None  # Presente si hay fallback.
+    payload: Dict[str, Any]              # Output validated against the schema.
+    decision_latency_ms: float           # Latency of the DECISION only (target <100ms).
+    within_latency_target: bool          # Did the decision meet the target?
+    decision_source: str                 # 'strands-decider' or 'simulated'.
+    narrative_source: str                # 'bedrock' or 'template'.
+    clarification_prompt: Optional[str] = None  # Present if there is a fallback.
 
     @property
     def action_type(self) -> str:
@@ -57,7 +57,7 @@ class EvaluationResult:
 
 
 class DecisionEngine:
-    """Orquesta decisión (Decider), triage, generación (Bedrock) y telemetría."""
+    """Orchestrates decision (Decider), triage, generation (Bedrock) and telemetry."""
 
     def __init__(
         self,
@@ -70,40 +70,52 @@ class DecisionEngine:
         self._narrator = narrator or build_default_narrator()
         self._telemetry = telemetry or TelemetryPanel()
         self._fallback_threshold = fallback_threshold
+        # Last-resort narrator, always available, for resilience in case the
+        # primary narrator raises at runtime.
+        self._fallback_narrator = TemplateNarrator()
 
     @property
     def telemetry(self) -> TelemetryPanel:
         return self._telemetry
 
     def evaluate(self, player_input: str) -> EvaluationResult:
-        """Procesa un turno completo: decidir → triage → narrar → validar."""
-        # 1) DECISIÓN. La latencia relevante (objetivo <100ms) es la del backend
-        # que efectivamente resolvió, reportada en el propio DecisionResult. No la
-        # cronometramos aquí para no contaminarla con posibles intentos de fallback.
+        """Process a full turn: decide -> triage -> narrate -> validate."""
+        # 1) DECISION. The relevant latency (target <100ms) is that of the backend
+        # that actually resolved, reported in the DecisionResult itself. We do not
+        # time it here so it is not contaminated by possible fallback attempts.
         decision: DecisionResult = self._decider.decide(player_input)
         decision_latency_ms = decision.decision_latency_ms
 
         confidence = float(decision.confidence_score)
 
-        # 2) TRIAGE / FALLBACK (regla 3).
+        # 2) TRIAGE / FALLBACK (rule 3).
         clarification_prompt: Optional[str] = None
         trigger_fallback = confidence <= self._fallback_threshold
 
         if trigger_fallback:
-            # No narramos una decisión poco fiable: pedimos aclaración.
+            # We do not narrate an unreliable decision: we ask for clarification.
             target_branch = "branch.clarify"
             narrative_response = ""
             narrative_source = "none"
             clarification_prompt = self._build_clarification_prompt(player_input, confidence)
         else:
-            # 3) GENERACIÓN con Bedrock (o plantilla de fallback).
+            # 3) GENERATION with Bedrock (or template fallback).
+            # Resilience: if the narrator fails at runtime (e.g. Bedrock raises on
+            # throttling or credentials), we do NOT crash the turn; we degrade to
+            # a local template narration and flag it in the source.
             target_branch = f"branch.{decision.branch_id}"
-            narrative_response = self._narrator.narrate(
-                player_input, decision.branch_id, decision.action_type
-            )
-            narrative_source = self._narrator.source
+            try:
+                narrative_response = self._narrator.narrate(
+                    player_input, decision.branch_id, decision.action_type
+                )
+                narrative_source = self._narrator.source
+            except Exception:
+                narrative_response = self._fallback_narrator.narrate(
+                    player_input, decision.branch_id, decision.action_type
+                )
+                narrative_source = f"{getattr(self._narrator, 'source', 'unknown')}->template(error)"
 
-        # 4) Construir y VALIDAR el payload contra el esquema narrativo.
+        # 4) Build and VALIDATE the payload against the narrative schema.
         payload: Dict[str, Any] = {
             "action_type": decision.action_type,
             "target_branch": target_branch,
@@ -116,7 +128,7 @@ class DecisionEngine:
 
         within_target = decision_latency_ms < LATENCY_TARGET_MS
 
-        # 4b) TELEMETRÍA por turno.
+        # 4b) TELEMETRY per turn.
         self._telemetry.record(
             latency_ms=decision_latency_ms,
             confidence_score=confidence,
@@ -135,10 +147,10 @@ class DecisionEngine:
         )
 
     def _build_clarification_prompt(self, player_input: str, confidence: float) -> str:
-        """Genera el prompt de aclaración (Human-in-the-Loop)."""
-        shown = player_input.strip() or "(entrada vacía)"
+        """Build the clarification prompt (Human-in-the-Loop)."""
+        shown = player_input.strip() or "(empty input)"
         return (
-            "No estoy seguro de cómo interpretar esa acción "
-            f"(certeza {confidence:.0%}, umbral {self._fallback_threshold:.0%}). "
-            f"Reformula o detalla qué quieres hacer con: \"{shown}\"."
+            "I'm not sure how to interpret that action "
+            f"(confidence {confidence:.0%}, threshold {self._fallback_threshold:.0%}). "
+            f"Rephrase or add detail about what you want to do with: \"{shown}\"."
         )

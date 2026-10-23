@@ -1,25 +1,26 @@
 """
-Cliente de Strands Decider 2B: la capa de DECISIÓN de ChronosDecider.
+Strands Decider 2B client: the DECISION layer of ChronosDecider.
 
-Strands Decider 2B no genera texto. Lee un estado y una pregunta tipada y
-devuelve una elección con una confianza calibrada
-(https://github.com/strands-labs/strands-decider). ChronosDecider le hace una
-pregunta `choice`: dada la acción del jugador, ¿qué rama narrativa corresponde?
+Strands Decider 2B does not generate text. It reads a state and a typed question
+and returns a choice with a calibrated confidence
+(https://github.com/strands-labs/strands-decider). ChronosDecider asks it a
+`choice` question: given the player's action, which narrative branch applies?
 
-Este módulo expone:
-  * `DecisionResult`          : elección + confianza (SIN narrativa).
-  * `DeciderBackend`          : interfaz que cualquier backend debe cumplir.
-  * `StrandsDeciderHTTPBackend`: cliente del servidor real (`/v1/systemone`).
-  * `SimulatedDeciderBackend` : fallback determinista para correr sin el modelo.
-  * `DeciderClient`           : fachada estable que usa el motor.
+This module exposes:
+  * `DecisionResult`           : choice + confidence (WITHOUT narrative).
+  * `DeciderBackend`           : interface any backend must satisfy.
+  * `StrandsDeciderHTTPBackend`: client for the real server (`/v1/systemone`).
+  * `SimulatedDeciderBackend`  : deterministic fallback to run without the model.
+  * `DeciderClient`            : stable facade used by the engine.
 
-El servidor real se levanta con:
+The real server is started with:
     strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8000
 """
 
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.error
 import urllib.request
@@ -34,26 +35,56 @@ from ..config import (
     NARRATIVE_BRANCHES,
 )
 
-# Nombre de la pregunta `choice` que enviamos al modelo.
+# Name of the `choice` question we send to the model.
 _BRANCH_QUESTION = "narrative_branch"
 _BRANCH_INSTRUCTIONS = (
-    "Dada la acción del jugador, elige la rama narrativa del RPG que corresponde."
+    "Given the player's action, choose the matching RPG narrative branch."
 )
+
+
+def _safe_confidence(value: Any) -> float:
+    """Normalize a possibly malformed confidence_score to [0.0, 1.0].
+
+    Resilience: a model response with a None, non-numeric, NaN, infinite or
+    out-of-range confidence must NOT propagate an exception. It collapses to a
+    safe value that, being low, triggers the Human-in-the-Loop fallback.
+    """
+    try:
+        conf = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(conf) or math.isinf(conf):
+        return 0.0
+    # Clamp to the valid range instead of rejecting: a 1.2 is treated as 1.0.
+    return max(0.0, min(1.0, conf))
+
+
+def _safe_latency(value: Any) -> float | None:
+    """Normalize the latency reported by the server; None if invalid."""
+    if value is None:
+        return None
+    try:
+        lat = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(lat) or math.isinf(lat) or lat < 0:
+        return None
+    return lat
 
 
 @dataclass
 class DecisionResult:
-    """Resultado de la DECISIÓN del Decider (sin texto narrativo).
+    """Result of the Decider's DECISION (no narrative text).
 
     Attributes:
-        branch_id: id de la rama elegida (clave de NARRATIVE_BRANCHES) o 'clarify'.
-        action_type: tipo de acción asociado a la rama (p. ej. 'COMBAT').
-        confidence_score: confianza calibrada [0.0, 1.0] devuelta por el modelo.
-        source: de dónde salió la decisión ('strands-decider' o 'simulated').
-        decision_latency_ms: latencia REAL del backend que resolvió la decisión.
-            No incluye intentos fallidos de otros backends (ver DeciderClient).
-        server_latency_ms: latencia reportada por el propio servidor, si existe.
-        raw: respuesta cruda para depuración.
+        branch_id: id of the chosen branch (a NARRATIVE_BRANCHES key) or 'clarify'.
+        action_type: action type associated with the branch (e.g. 'COMBAT').
+        confidence_score: calibrated confidence [0.0, 1.0] returned by the model.
+        source: where the decision came from ('strands-decider' or 'simulated').
+        decision_latency_ms: REAL latency of the backend that resolved the
+            decision. Excludes failed attempts by other backends (see DeciderClient).
+        server_latency_ms: latency reported by the server itself, if present.
+        raw: raw response for debugging.
     """
 
     branch_id: str
@@ -67,18 +98,18 @@ class DecisionResult:
 
 @runtime_checkable
 class DeciderBackend(Protocol):
-    """Contrato de un backend de decisión."""
+    """Contract for a decision backend."""
 
     def decide_branch(self, player_input: str, options: List[str]) -> DecisionResult:
-        """Elige una rama narrativa entre `options` para `player_input`."""
+        """Choose a narrative branch among `options` for `player_input`."""
         ...
 
 
 class StrandsDeciderHTTPBackend:
-    """Backend que llama al servidor HTTP de Strands Decider 2B.
+    """Backend that calls the Strands Decider 2B HTTP server.
 
-    Usa el endpoint `/v1/systemone` con una pregunta `choice`. Implementado con
-    `urllib` de la biblioteca estándar: no añade dependencias.
+    Uses the `/v1/systemone` endpoint with a `choice` question. Implemented with
+    the standard-library `urllib`: it adds no dependencies.
     """
 
     def __init__(
@@ -92,8 +123,8 @@ class StrandsDeciderHTTPBackend:
         self._timeout_s = timeout_s
 
     def decide_branch(self, player_input: str, options: List[str]) -> DecisionResult:
-        # El modelo espera `state` (el texto) y `questions` tipadas. La pregunta
-        # `choice` lleva las opciones separadas por comas en `instructions`.
+        # The model expects `state` (the text) and typed `questions`. The
+        # `choice` question carries the comma-separated options in `instructions`.
         body = {
             "state": player_input,
             "questions": {
@@ -110,7 +141,7 @@ class StrandsDeciderHTTPBackend:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        # Latencia medida localmente de ida y vuelta al servidor del modelo.
+        # Round-trip latency to the model server, measured locally.
         start = time.perf_counter()
         with urllib.request.urlopen(req, timeout=self._timeout_s) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
@@ -121,12 +152,12 @@ class StrandsDeciderHTTPBackend:
     def _parse(
         self, payload: Dict[str, Any], options: List[str], latency_ms: float
     ) -> DecisionResult:
-        """Traduce la respuesta del servidor a un `DecisionResult`.
+        """Translate the server response into a `DecisionResult`.
 
-        Formato esperado (ver README oficial del servidor):
+        Expected shape (see the server's official README):
             {"answers": {"narrative_branch": {"type":"choice",
              "choice":"combat", "confidence":0.83, ...}}, "latency_ms": ...}
-        Se es tolerante con variaciones menores de forma.
+        It tolerates minor shape variations.
         """
         answers = payload.get("answers", {})
         answer = answers.get(_BRANCH_QUESTION, {})
@@ -134,14 +165,14 @@ class StrandsDeciderHTTPBackend:
         branch_id = answer.get("choice") or answer.get("value")
         confidence = answer.get("confidence")
 
-        # Si el servidor devuelve distribución de probabilidades, usamos el argmax.
+        # If the server returns a probability distribution, take the argmax.
         if branch_id is None and isinstance(answer.get("probabilities"), dict):
             probs: Dict[str, float] = answer["probabilities"]
             branch_id = max(probs, key=probs.get)
             confidence = probs[branch_id]
 
         if branch_id not in NARRATIVE_BRANCHES:
-            # El modelo eligió algo fuera del catálogo: tratamos como baja certeza.
+            # The model chose something outside the catalog: treat as low confidence.
             return DecisionResult(
                 branch_id="clarify",
                 action_type="UNKNOWN",
@@ -156,27 +187,28 @@ class StrandsDeciderHTTPBackend:
         return DecisionResult(
             branch_id=branch_id,
             action_type=action_type,
-            confidence_score=float(confidence if confidence is not None else 0.0),
+            confidence_score=_safe_confidence(confidence),
             source="strands-decider",
             decision_latency_ms=latency_ms,
-            server_latency_ms=payload.get("latency_ms"),
+            server_latency_ms=_safe_latency(payload.get("latency_ms")),
             raw=payload,
         )
 
 
 class SimulatedDeciderBackend:
-    """Fallback determinista por reglas (para correr SIN el servidor del modelo).
+    """Deterministic rule-based fallback (to run WITHOUT the model server).
 
-    No pretende ser el modelo: es un sustituto honesto que permite ejecutar la
-    demo y los tests sin descargar pesos. Marca su origen como 'simulated'.
+    It does not pretend to be the model: it is an honest stand-in that lets the
+    demo and tests run without downloading weights. It marks its source as
+    'simulated'. Keywords cover both Spanish and English player inputs.
     """
 
     _INTENT_RULES = [
-        (("atacar", "ataca", "golpear", "pelear", "luchar", "attack"), "combat"),
-        (("huir", "escapar", "correr", "flee", "run"), "flee"),
-        (("hablar", "preguntar", "decir", "talk", "speak", "ask"), "dialogue"),
-        (("explorar", "mirar", "buscar", "investigar", "explore", "search"), "exploration"),
-        (("usar", "abrir", "coger", "tomar", "use", "open", "take"), "interaction"),
+        (("atacar", "ataca", "golpear", "pelear", "luchar", "attack", "fight", "hit"), "combat"),
+        (("huir", "escapar", "correr", "flee", "run", "escape"), "flee"),
+        (("hablar", "preguntar", "decir", "talk", "speak", "ask", "say"), "dialogue"),
+        (("explorar", "mirar", "buscar", "investigar", "explore", "search", "look", "investigate"), "exploration"),
+        (("usar", "abrir", "coger", "tomar", "use", "open", "take", "grab"), "interaction"),
     ]
 
     def decide_branch(self, player_input: str, options: List[str]) -> DecisionResult:
@@ -191,7 +223,7 @@ class SimulatedDeciderBackend:
             branch_id, action_type, confidence = "clarify", "UNKNOWN", 0.40
         else:
             branch_id = matched[0]
-            # Una sola intención clara -> alta certeza; varias -> ambigua.
+            # A single clear intent -> high confidence; several -> ambiguous.
             confidence = 0.92 if len(matched) == 1 else 0.58
             action_type = NARRATIVE_BRANCHES.get(branch_id, ("UNKNOWN", ""))[0]
 
@@ -204,11 +236,11 @@ class SimulatedDeciderBackend:
 
 
 class DeciderClient:
-    """Fachada de decisión. Usa el servidor real y cae al simulado si falla.
+    """Decision facade. Uses the real server and falls back to the simulated one.
 
-    El motor solo depende de esta clase. El comportamiento por defecto intenta el
-    modelo real; si el servidor no está disponible (desarrollo local sin pesos),
-    degrada con transparencia al backend simulado, sin romper la demo.
+    The engine only depends on this class. The default behavior tries the real
+    model; if the server is unavailable (local development without weights), it
+    degrades transparently to the simulated backend without breaking the demo.
     """
 
     def __init__(
@@ -219,16 +251,42 @@ class DeciderClient:
         self._explicit_backend = backend
         self._allow_fallback = allow_simulated_fallback
         self._simulated = SimulatedDeciderBackend()
-        # Si no se inyecta backend, intentamos el HTTP real por defecto.
+        # If no backend is injected, we try the real HTTP one by default.
         self._primary: DeciderBackend = backend or StrandsDeciderHTTPBackend()
 
     def decide(self, player_input: str) -> DecisionResult:
-        """Decide la rama narrativa para la acción del jugador."""
+        """Decide the narrative branch for the player's action.
+
+        Resilience: if the primary backend fails for ANY reason (server down,
+        timeout, malformed JSON, unexpected response shape), it degrades to the
+        simulated backend instead of propagating and crashing the UI. The only
+        exception is when the user injected an explicit backend or disabled the
+        fallback: then the error propagates so it is not hidden in tests.
+        """
         options = list(NARRATIVE_BRANCHES.keys())
         try:
-            return self._primary.decide_branch(player_input, options)
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError):
-            # Servidor del modelo no disponible o respuesta inesperada.
+            result = self._primary.decide_branch(player_input, options)
+        except Exception:
             if self._explicit_backend is not None or not self._allow_fallback:
                 raise
             return self._simulated.decide_branch(player_input, options)
+
+        # Extra shielding: if the backend returned an inconsistent decision
+        # (branch outside the catalog, malformed confidence), we sanitize it to
+        # a low-confidence decision that triggers the Human-in-the-Loop fallback.
+        return self._sanitize(result)
+
+    @staticmethod
+    def _sanitize(result: DecisionResult) -> DecisionResult:
+        """Ensure the DecisionResult is consistent and safe to use.
+
+        `clarify` is a legitimate branch (the explicit "not reliable" signal), so
+        it is respected. Any OTHER branch outside the catalog is redirected to
+        `clarify` with confidence 0.0 to force the fallback safely.
+        """
+        result.confidence_score = _safe_confidence(result.confidence_score)
+        if result.branch_id != "clarify" and result.branch_id not in NARRATIVE_BRANCHES:
+            result.branch_id = "clarify"
+            result.action_type = "UNKNOWN"
+            result.confidence_score = 0.0
+        return result
