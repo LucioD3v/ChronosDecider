@@ -1,8 +1,8 @@
 """
-Panel de telemetría de ChronosDecider.
+ChronosDecider telemetry panel.
 
-Captura, por cada evaluación, la latencia en milisegundos y el historial de
-puntuaciones de certeza (confidence score), según la regla 4 de la arquitectura.
+Captures, for each evaluation, the latency in milliseconds and the history of
+confidence scores, per rule 4 of the architecture.
 """
 
 from .telemetry_panel import TelemetryPanel, TelemetryRecord, TelemetrySummary

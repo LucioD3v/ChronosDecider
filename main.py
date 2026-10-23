@@ -1,11 +1,11 @@
 """
-Punto de entrada de ChronosDecider.
+ChronosDecider entry point.
 
-Lanza la demo RPG interactiva por consola. Todo el procesamiento se enruta por
-el `DecisionEngine`, que usa Strands Decider 2B (adaptador) para clasificar la
-intención, valida contra el esquema narrativo y registra telemetría.
+Launches the interactive console RPG demo. All processing is routed through the
+`DecisionEngine`, which uses Strands Decider 2B to make the decision, validates
+against the narrative schema and records telemetry.
 
-Uso:
+Usage:
     python main.py
 """
 

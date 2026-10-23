@@ -1,4 +1,4 @@
-"""Tests del narrador (`narrator`): generación de texto y selección de backend."""
+"""Narrator tests (`narrator`): text generation and backend selection."""
 
 import unittest
 
@@ -24,8 +24,8 @@ class TestTemplateNarrator(unittest.TestCase):
 
 class TestBuildDefaultNarrator(unittest.TestCase):
     def test_sin_bedrock_configurado_devuelve_template(self):
-        # En el entorno de test BEDROCK_MODEL_ID está vacío por defecto,
-        # así que el narrador por defecto debe ser el de plantilla local.
+        # In the test environment BEDROCK_MODEL_ID is empty by default,
+        # so the default narrator must be the local template one.
         narrator = build_default_narrator()
         self.assertEqual(narrator.source, "template")
 

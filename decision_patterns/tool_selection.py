@@ -1,29 +1,29 @@
 """
-Patrón de decisión reutilizable: TOOL SELECTION con Strands Decider 2B.
+Reusable decision pattern: TOOL SELECTION with Strands Decider 2B.
 
-Problema que resuelve
----------------------
-Un agente recibe texto del usuario y tiene varias herramientas (o ramas) entre
-las que elegir. Dejar que un LLM decida por generación es lento, caro y propenso
-a elegir con exceso de confianza. Strands Decider 2B responde una pregunta
-`choice` tipada con una confianza CALIBRADA, en una sola pasada, para que el
-agente actúe solo cuando la decisión es fiable y pida ayuda cuando no lo es.
+Problem it solves
+-----------------
+An agent receives user text and has several tools (or branches) to choose from.
+Letting an LLM decide via generation is slow, expensive and prone to choosing
+with overconfidence. Strands Decider 2B answers a typed `choice` question with a
+CALIBRATED confidence, in a single pass, so the agent acts only when the
+decision is reliable and asks for help when it is not.
 
-Este módulo es independiente de ChronosDecider: no importa nada del paquete
-`src`. Cualquiera puede copiar `decision_patterns/` a su proyecto y usarlo.
+This module is independent of ChronosDecider: it imports nothing from the `src`
+package. Anyone can copy `decision_patterns/` into their project and use it.
 
-Qué incluye (los tres elementos que pide la hackathon)
-------------------------------------------------------
-1. La pregunta tipada y el conjunto de opciones -> `build_choice_question`.
-2. El wiring que lo pone en la ruta del agente -> `ToolSelectionPattern.select`,
-   pensado para un gate tipo `before_tool_call` / InterventionHandler.
-3. Nota de uso -> README.md de esta carpeta y los docstrings de aquí.
+What it includes (the three elements the hackathon asks for)
+------------------------------------------------------------
+1. The typed question and option set -> `build_choice_question`.
+2. The wiring that puts it in the agent's path -> `ToolSelectionPattern.select`,
+   designed for a `before_tool_call` / InterventionHandler-style gate.
+3. Usage note -> this folder's README.md and the docstrings here.
 
-Transporte
-----------
-Habla con el servidor de Strands Decider (`strands-decider serve ... --port 8000`)
-vía el endpoint `/v1/systemone`, usando solo la biblioteca estándar (`urllib`).
-No añade dependencias.
+Transport
+---------
+Talks to the Strands Decider server (`strands-decider serve ... --port 8000`)
+via the `/v1/systemone` endpoint, using only the standard library (`urllib`).
+It adds no dependencies.
 """
 
 from __future__ import annotations
@@ -42,16 +42,16 @@ _QUESTION_NAME = "tool_choice"
 
 @dataclass
 class ToolChoice:
-    """Resultado de una decisión de selección de herramienta.
+    """Result of a tool-selection decision.
 
     Attributes:
-        tool: la opción elegida (una de las que se pasaron), o None si el modelo
-            devolvió algo fuera del conjunto.
-        confidence: confianza calibrada [0.0, 1.0] de la elección.
-        should_act: True si `confidence > threshold`; si es False, el agente debe
-            pedir aclaración en vez de ejecutar la herramienta (guardrail).
-        latency_ms: latencia de ida y vuelta medida localmente.
-        raw: respuesta cruda del servidor para depuración.
+        tool: the chosen option (one of those passed in), or None if the model
+            returned something outside the set.
+        confidence: calibrated confidence [0.0, 1.0] of the choice.
+        should_act: True if `confidence > threshold`; if False, the agent should
+            ask for clarification instead of running the tool (guardrail).
+        latency_ms: round-trip latency measured locally.
+        raw: raw server response for debugging.
     """
 
     tool: Optional[str]
@@ -62,23 +62,23 @@ class ToolChoice:
 
 
 def build_choice_question(instructions: str, options: List[str]) -> Dict[str, Any]:
-    """Construye el cuerpo `/v1/systemone` para una pregunta `choice`.
+    """Build the `/v1/systemone` body for a `choice` question.
 
     Args:
-        instructions: la pregunta en lenguaje natural (p. ej. "¿Qué herramienta
-            debe usar el agente?").
-        options: lista de etiquetas de opción (los nombres de tus herramientas).
+        instructions: the natural-language question (e.g. "Which tool should the
+            agent use?").
+        options: list of option labels (the names of your tools).
 
     Returns:
-        El dict listo para serializar como JSON y enviar al servidor.
+        The dict ready to serialize as JSON and send to the server.
 
-    El servidor espera las opciones embebidas en `instructions` con el formato
-    `pregunta=opt1,opt2,...`, idéntico al del CLI `--choice`.
+    The server expects the options embedded in `instructions` using the
+    `question=opt1,opt2,...` format, identical to the CLI's `--choice`.
     """
     if not options:
-        raise ValueError("Se requiere al menos una opción para la pregunta choice.")
+        raise ValueError("At least one option is required for the choice question.")
     return {
-        "state": "",  # se rellena en tiempo de llamada
+        "state": "",  # filled in at call time
         "questions": {
             _QUESTION_NAME: {
                 "type": "choice",
@@ -91,10 +91,10 @@ def build_choice_question(instructions: str, options: List[str]) -> Dict[str, An
 def parse_choice_answer(
     payload: Dict[str, Any], options: List[str], threshold: float, latency_ms: float
 ) -> ToolChoice:
-    """Traduce la respuesta del servidor a un `ToolChoice`.
+    """Translate the server response into a `ToolChoice`.
 
-    Es tolerante con variaciones de forma: acepta `choice`, `value` o una
-    distribución `probabilities` (en cuyo caso toma el argmax).
+    It tolerates shape variations: it accepts `choice`, `value` or a
+    `probabilities` distribution (in which case it takes the argmax).
     """
     answer = payload.get("answers", {}).get(_QUESTION_NAME, {})
     tool = answer.get("choice") or answer.get("value")
@@ -107,7 +107,7 @@ def parse_choice_answer(
 
     conf = float(confidence) if confidence is not None else 0.0
     if tool not in options:
-        # Elección fuera del conjunto: trátala como no fiable.
+        # Choice outside the set: treat it as not reliable.
         return ToolChoice(tool=None, confidence=conf, should_act=False,
                           latency_ms=latency_ms, raw=payload)
 
@@ -116,20 +116,20 @@ def parse_choice_answer(
 
 
 class ToolSelectionPattern:
-    """Selector de herramienta reutilizable respaldado por Strands Decider 2B.
+    """Reusable tool selector backed by Strands Decider 2B.
 
-    Uso típico (gate antes de ejecutar una herramienta):
+    Typical usage (gate before running a tool):
 
         pattern = ToolSelectionPattern(
-            instructions="¿Qué herramienta responde mejor al usuario?",
-            options=["buscar_web", "consultar_db", "responder_directo"],
+            instructions="Which tool best answers the user?",
+            options=["web_search", "query_db", "answer_directly"],
             confidence_threshold=0.70,
         )
         choice = pattern.select(user_input)
         if choice.should_act:
-            ejecutar_herramienta(choice.tool)
+            run_tool(choice.tool)
         else:
-            pedir_aclaracion_al_usuario()
+            ask_user_for_clarification()
     """
 
     def __init__(
@@ -149,7 +149,7 @@ class ToolSelectionPattern:
         self._timeout_s = timeout_s
 
     def select(self, state: str) -> ToolChoice:
-        """Pregunta a Decider qué herramienta usar para `state` (texto del usuario)."""
+        """Ask Decider which tool to use for `state` (the user's text)."""
         body = build_choice_question(self.instructions, self.options)
         body["state"] = state
         data = json.dumps(body).encode("utf-8")
@@ -166,11 +166,11 @@ class ToolSelectionPattern:
     def as_intervention(
         self, execute: Callable[[str], Any], on_low_confidence: Callable[[ToolChoice], Any]
     ) -> Callable[[str], Any]:
-        """Envuelve el patrón como un gate estilo `before_tool_call`.
+        """Wrap the pattern as a `before_tool_call`-style gate.
 
-        Devuelve una función `handler(state)` que ejecuta la herramienta elegida
-        solo si la confianza supera el umbral; si no, invoca `on_low_confidence`
-        para que el agente pida aclaración (patrón guardrail).
+        Returns a `handler(state)` function that runs the chosen tool only if the
+        confidence clears the threshold; otherwise it invokes `on_low_confidence`
+        so the agent asks for clarification (guardrail pattern).
         """
         def handler(state: str) -> Any:
             choice = self.select(state)

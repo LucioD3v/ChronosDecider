@@ -1,53 +1,53 @@
-# Guion del video demo (< 3 minutos)
+# Demo video script (< 3 minutes)
 
-> Objetivo del jurado: ver el agente funcionando y, sobre todo, ver la decisión
-> de Decider 2B en acción. Mantenlo por debajo de 3:00. Graba a 1080p.
+> Judges' goal: see the agent working and, above all, see the Decider 2B decision
+> in action. Keep it under 3:00. Record at 1080p.
 
-## Checklist antes de grabar
+## Pre-recording checklist
 
-- [ ] Servidor de Decider corriendo: `strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8000`
-- [ ] (Opcional pero recomendado) Bedrock configurado en `us-east-1` con `CHRONOS_BEDROCK_MODEL_ID` para que la narrativa sea generada real.
-- [ ] Terminal con fuente grande y panel visible completo.
-- [ ] Tener a mano una acción clara (`atacar al goblin`) y una ambigua (`mmm no sé`).
+- [ ] Decider server running: `strands-decider serve StrandsAgents/strands-decider-2B-qwen3.5-v1-2610 --port 8000`
+- [ ] (Optional but recommended) Bedrock configured in `us-east-1` with `CHRONOS_BEDROCK_MODEL_ID` so the narrative is really generated.
+- [ ] Terminal with a large font and the full panel visible.
+- [ ] Have a clear action (`attack the goblin`) and an ambiguous one (`hmm I don't know`) ready.
 
-## Estructura (tiempos orientativos)
+## Structure (approximate timing)
 
-**0:00–0:20 — Gancho y qué es**
-"Este es ChronosDecider, un Game Master de RPG en tiempo real. La gracia: la
-decisión de qué pasa en la historia no la toma un LLM, la toma Strands Decider
-2B en milisegundos, y Amazon Bedrock solo se encarga de narrar."
+**0:00–0:20 — Hook and what it is**
+"This is ChronosDecider, a real-time RPG Game Master. The twist: the decision of
+what happens in the story is not made by an LLM, it's made by Strands Decider 2B
+in milliseconds, and Amazon Bedrock only handles the narration."
 
-**0:20–0:45 — La arquitectura en una frase**
-Muestra el diagrama del README (decisión → triage → generación).
-"Decider decide la rama con una confianza calibrada. Si confía, Bedrock narra.
-Si no, el agente pregunta en vez de inventar."
+**0:20–0:45 — The architecture in one sentence**
+Show the README diagram (decision → triage → generation).
+"Decider picks the branch with a calibrated confidence. If it's confident,
+Bedrock narrates. If not, the agent asks instead of making things up."
 
-**0:45–1:40 — Demo acción clara**
-- Escribe `atacar al goblin`.
-- Señala en el panel: **Decisión vía: strands-decider**, la **rama** elegida, la
-  **confianza** y la **latencia de decisión** (resalta el <100ms / ~115ms).
-- Señala **Narrativa vía: bedrock** y lee la narración generada.
-"La decisión fue del modelo de decisión; el texto, de Bedrock. Cada uno en lo suyo."
+**0:45–1:40 — Clear-action demo**
+- Type `attack the goblin`.
+- Point at the panel: **Decision via: strands-decider**, the chosen **branch**,
+  the **confidence** and the **decision latency** (highlight the <100ms / ~115ms).
+- Point at **Narrative via: bedrock** and read the generated narration.
+"The decision came from the decision model; the text, from Bedrock. Each doing its job."
 
-**1:40–2:20 — Demo guardrail (Human-in-the-Loop)**
-- Escribe algo ambiguo (`mmm no sé qué hacer`).
-- Muestra que la **confianza cae por debajo de 0.70**, se activa el **fallback** y
-  el agente **pide aclaración** en lugar de narrar.
-"Aquí está el valor de la confianza calibrada: el agente sabe cuándo NO sabe."
+**1:40–2:20 — Guardrail demo (Human-in-the-Loop)**
+- Type something ambiguous (`hmm I don't know what to do`).
+- Show that **confidence drops below 0.70**, the **fallback** triggers and the
+  agent **asks for clarification** instead of narrating.
+"Here's the value of calibrated confidence: the agent knows when it does NOT know."
 
-**2:20–2:45 — El patrón reutilizable**
-- Abre `decision_patterns/tool_selection.py` o su README.
-"Esta decisión está empaquetada como un patrón reutilizable de tool selection:
-cambias las opciones por tus herramientas y lo sueltas en tu agente."
+**2:20–2:45 — The reusable pattern**
+- Open `decision_patterns/tool_selection.py` or its README.
+"This decision is packaged as a reusable tool-selection pattern: swap the options
+for your tools and drop it into your agent."
 
-**2:45–3:00 — Cierre**
-"ChronosDecider. Decisiones rápidas y calibradas con Strands Decider 2B,
-narrativa con Bedrock. Repo y artículo en la descripción."
+**2:45–3:00 — Closing**
+"ChronosDecider. Fast, calibrated decisions with Strands Decider 2B, narration
+with Bedrock. Repo and article in the description."
 
-## Notas
+## Notes
 
-- Si grabas sin Bedrock, di explícitamente "aquí uso el narrador local de
-  plantilla; con Bedrock configurado el texto es generado" — honestidad ante el
-  jurado, nunca presentes la plantilla como si fuera Bedrock.
-- Resalta SIEMPRE el momento en que el panel muestra la confianza y la latencia:
-  es el corazón de la hackathon.
+- If you record without Bedrock, say it explicitly: "here I'm using the local
+  template narrator; with Bedrock configured the text is generated" — honesty
+  with the judges, never present the template as if it were Bedrock.
+- ALWAYS highlight the moment the panel shows the confidence and the latency:
+  that is the heart of the hackathon.

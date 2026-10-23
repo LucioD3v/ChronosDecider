@@ -1,46 +1,49 @@
 """
-Panel de telemetría: registro e inspección de métricas por decisión.
+Telemetry panel: recording and inspection of per-decision metrics.
 
-Mide y almacena (regla 4 de `system_architecture.md`):
-  * timestamp de ejecución,
-  * latencia del modelo en milisegundos,
+Measures and stores (rule 4 of `system_architecture.md`):
+  * execution timestamp,
+  * model latency in milliseconds,
   * confidence score,
-y deriva un resumen agregado (incl. % dentro del objetivo <100ms).
+and derives an aggregated summary (incl. % within the <100ms target).
 
-Solo biblioteca estándar. El historial se guarda en memoria con un tope
-opcional para no crecer sin límite en sesiones largas.
+Standard library only. History is kept in memory with an optional cap so it
+does not grow unbounded during long sessions.
 """
 
 from __future__ import annotations
 
+import json
 import time
 from collections import deque
-from dataclasses import dataclass
-from typing import Deque, List, Optional
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Deque, Dict, List, Optional
 
 from ..config import LATENCY_TARGET_MS
 
 
 @dataclass(frozen=True)
 class TelemetryRecord:
-    """Métricas inmutables de una única evaluación."""
+    """Immutable metrics of a single evaluation."""
 
-    timestamp: float          # Epoch (segundos) del momento del registro.
-    latency_ms: float         # Latencia de la evaluación en milisegundos.
-    confidence_score: float   # Certeza [0.0, 1.0] devuelta por el modelo.
-    action_type: str          # Tipo de acción clasificada.
-    target_branch: str        # Rama narrativa elegida.
-    triggered_fallback: bool  # ¿Se activó Human-in-the-Loop?
+    timestamp: float          # Epoch (seconds) of the moment of recording.
+    latency_ms: float         # Latency of the evaluation in milliseconds.
+    confidence_score: float   # Confidence [0.0, 1.0] returned by the model.
+    action_type: str          # Classified action type.
+    target_branch: str        # Chosen narrative branch.
+    triggered_fallback: bool  # Was Human-in-the-Loop triggered?
 
     @property
     def within_latency_target(self) -> bool:
-        """True si la evaluación cumplió el objetivo de latencia (<100ms)."""
+        """True if the evaluation met the latency target (<100ms)."""
         return self.latency_ms < LATENCY_TARGET_MS
 
 
 @dataclass(frozen=True)
 class TelemetrySummary:
-    """Vista agregada del historial de telemetría."""
+    """Aggregated view of the telemetry history."""
 
     total: int
     avg_latency_ms: float
@@ -50,19 +53,19 @@ class TelemetrySummary:
     avg_confidence: float
     last_confidence: float
     fallback_count: int
-    within_target_ratio: float  # Fracción [0.0, 1.0] bajo el objetivo de latencia.
+    within_target_ratio: float  # Fraction [0.0, 1.0] under the latency target.
 
 
 class TelemetryPanel:
-    """Acumula registros de telemetría y expone agregados en tiempo real."""
+    """Accumulates telemetry records and exposes real-time aggregates."""
 
     def __init__(self, max_history: Optional[int] = 1000) -> None:
-        """Crea el panel.
+        """Create the panel.
 
         Args:
-            max_history: nº máximo de registros a conservar. `None` = ilimitado.
+            max_history: max number of records to keep. `None` = unlimited.
         """
-        # `deque` con `maxlen` descarta automáticamente los más antiguos.
+        # A `deque` with `maxlen` automatically discards the oldest entries.
         self._records: Deque[TelemetryRecord] = deque(maxlen=max_history)
 
     def record(
@@ -73,7 +76,7 @@ class TelemetryPanel:
         target_branch: str,
         triggered_fallback: bool,
     ) -> TelemetryRecord:
-        """Registra las métricas de una evaluación y devuelve el registro creado."""
+        """Record the metrics of an evaluation and return the created record."""
         entry = TelemetryRecord(
             timestamp=time.time(),
             latency_ms=latency_ms,
@@ -85,24 +88,24 @@ class TelemetryPanel:
         self._records.append(entry)
         return entry
 
-    # --- Lectura del historial ---------------------------------------------
+    # --- History reads ------------------------------------------------------
     @property
     def records(self) -> List[TelemetryRecord]:
-        """Copia del historial completo (del más antiguo al más reciente)."""
+        """Copy of the full history (oldest to newest)."""
         return list(self._records)
 
     @property
     def confidence_history(self) -> List[float]:
-        """Historial de puntuaciones de certeza en orden cronológico."""
+        """History of confidence scores in chronological order."""
         return [r.confidence_score for r in self._records]
 
     @property
     def latency_history(self) -> List[float]:
-        """Historial de latencias (ms) en orden cronológico."""
+        """History of latencies (ms) in chronological order."""
         return [r.latency_ms for r in self._records]
 
     def summary(self) -> Optional[TelemetrySummary]:
-        """Agrega el historial. Devuelve `None` si aún no hay registros."""
+        """Aggregate the history. Returns `None` if there are no records yet."""
         if not self._records:
             return None
 
@@ -125,5 +128,54 @@ class TelemetryPanel:
         )
 
     def reset(self) -> None:
-        """Vacía el historial de telemetría."""
+        """Clear the telemetry history."""
         self._records.clear()
+
+    # --- Export -------------------------------------------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize the telemetry session to a JSON-compatible dict.
+
+        Includes export metadata, the aggregated summary and the full record
+        history (with both epoch and ISO-8601 timestamps for readability).
+        """
+        summary = self.summary()
+        records: List[Dict[str, Any]] = []
+        for r in self._records:
+            row = asdict(r)
+            # Add derived fields useful when reading the JSON outside the process.
+            row["timestamp_iso"] = datetime.fromtimestamp(
+                r.timestamp, tz=timezone.utc
+            ).isoformat()
+            row["within_latency_target"] = r.within_latency_target
+            records.append(row)
+
+        return {
+            "exported_at": datetime.now(tz=timezone.utc).isoformat(),
+            "latency_target_ms": LATENCY_TARGET_MS,
+            "summary": asdict(summary) if summary is not None else None,
+            "records": records,
+        }
+
+    def export_json(self, path: Optional[str] = None, indent: int = 2) -> Path:
+        """Write the telemetry session to a JSON file and return its path.
+
+        Args:
+            path: output path. If None, a timestamped name is generated in the
+                current working directory.
+            indent: JSON indentation for readability.
+
+        Returns:
+            The `Path` of the written file.
+        """
+        if path is None:
+            stamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            path = f"chronosdecider_telemetry_{stamp}.json"
+        out = Path(path)
+        # Create the parent directory if a nested path was given.
+        if out.parent and not out.parent.exists():
+            out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(self.to_dict(), ensure_ascii=False, indent=indent),
+            encoding="utf-8",
+        )
+        return out

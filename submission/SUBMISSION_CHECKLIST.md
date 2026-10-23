@@ -1,40 +1,40 @@
-# Checklist de envío — Agent Experience Hackathon: Strands Decider
+# Submission checklist — Agent Experience Hackathon: Strands Decider
 
-Fecha límite: **23 de octubre**. Requisitos tomados de las reglas oficiales.
+Deadline: **October 23**. Requirements taken from the official rules.
 
-## Obligatorio para calificar
+## Required to qualify
 
-- [ ] **Agente que usa Strands Decider 2B** para al menos una decisión
-      significativa, **emparejado con Amazon Bedrock**.
-      → Hecho en código: Decider decide la rama, Bedrock narra.
-      → **Pendiente tú**: ejecutar con el servidor de Decider real + Bedrock real
-        al menos para grabar el video.
-- [ ] **Artículo en Builder Center** describiendo el agente, qué hace y la
-      decisión entregada a Decider 2B.
-      → Borrador en `submission/ARTICLE_DRAFT.md` (rellena los marcadores).
-- [ ] **Repositorio público** con el código y **al menos un patrón de decisión
-      reutilizable**.
-      → Patrón en `decision_patterns/`. **Pendiente tú**: hacer el repo público.
-- [ ] **Video demo público < 3 minutos** mostrando el agente y la decisión de
-      Decider 2B funcionando.
-      → Guion en `submission/VIDEO_SCRIPT.md`.
-- [ ] **Un patrón de decisión declarado**: Tool selection.
-- [ ] **Agente original**, no publicado antes.
+- [ ] **Agent that uses Strands Decider 2B** for at least one meaningful
+      decision, **paired with Amazon Bedrock**.
+      → Done in code: Decider picks the branch, Bedrock narrates.
+      → **Your action**: run with the real Decider server + real Bedrock at least
+        to record the video.
+- [ ] **Article on Builder Center** describing the agent, what it does and the
+      decision handed to Decider 2B.
+      → Final text in `submission/ARTICLE_FINAL_EN.md` (fill in the markers).
+- [ ] **Public repository** with the code and **at least one reusable decision
+      pattern**.
+      → Pattern in `decision_patterns/`. Repo: https://github.com/LucioD3v/ChronosDecider
+- [ ] **Public demo video under 3 minutes** showing the agent and the Decider 2B
+      decision working.
+      → Script in `submission/VIDEO_SCRIPT.md`.
+- [ ] **One declared decision pattern**: Tool selection.
+- [ ] **Original agent**, not published before.
 
-## Tags (ambos, antes del deadline)
+## Tags (both, before the deadline)
 
 - [ ] `#strands-decider-2b`
 - [ ] `#tool-selection`
 
-## Recomendado (suma en la rúbrica)
+## Recommended (adds to the rubric)
 
-- [ ] Medir y reportar latencia/coste de mover la decisión fuera del LLM
-      (bonus en "Effective use of Decider 2B").
-- [ ] Capturas del panel de telemetría en el artículo.
+- [ ] Measure and report the latency/cost of moving the decision off the LLM
+      (bonus in "Effective use of Decider 2B").
+- [ ] Screenshots of the telemetry panel in the article.
 
-## Rúbrica (para enfocar el esfuerzo)
+## Rubric (to focus effort)
 
-- Creatividad y factor "cool" — 30%
-- Uso efectivo de Decider 2B (incl. calidad del patrón reutilizable) — 30%
-- Calidad de comunicación (artículo + video) — 25%
-- Originalidad — 15%
+- Creativity and cool factor — 30%
+- Effective use of Decider 2B (incl. reusable pattern quality) — 30%
+- Communication quality (article + video) — 25%
+- Originality — 15%
