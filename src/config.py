@@ -48,7 +48,9 @@ DECIDER_MODEL_ID: str = os.environ.get(
     "CHRONOS_DECIDER_MODEL", "StrandsAgents/strands-decider-2B-qwen3.5-v1-2610"
 )
 # Maximum wait time (s) for the HTTP call to the model server.
-DECIDER_TIMEOUT_S: float = float(os.environ.get("CHRONOS_DECIDER_TIMEOUT", "5.0"))
+# Default is generous because the 2B model on CPU can take tens of seconds per
+# decision; on GPU it is ~115ms. Override with CHRONOS_DECIDER_TIMEOUT.
+DECIDER_TIMEOUT_S: float = float(os.environ.get("CHRONOS_DECIDER_TIMEOUT", "90.0"))
 
 # --- Amazon Bedrock (narrative generation) ----------------------------------
 BEDROCK_REGION: str = os.environ.get("CHRONOS_BEDROCK_REGION", "us-east-1")

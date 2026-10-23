@@ -123,14 +123,20 @@ class StrandsDeciderHTTPBackend:
         self._timeout_s = timeout_s
 
     def decide_branch(self, player_input: str, options: List[str]) -> DecisionResult:
-        # The model expects `state` (the text) and typed `questions`. The
-        # `choice` question carries the comma-separated options in `instructions`.
+        # The model expects `state` (the text) and typed `questions`. A `choice`
+        # question needs a `criteria` dict mapping each option label to a short
+        # description; we build it from NARRATIVE_BRANCHES so the model gets
+        # meaningful context for every branch.
+        criteria = {
+            opt: NARRATIVE_BRANCHES.get(opt, ("", opt))[1] for opt in options
+        }
         body = {
             "state": player_input,
             "questions": {
                 _BRANCH_QUESTION: {
                     "type": "choice",
-                    "instructions": f"{_BRANCH_INSTRUCTIONS}={','.join(options)}",
+                    "instructions": _BRANCH_INSTRUCTIONS,
+                    "criteria": criteria,
                 }
             },
         }

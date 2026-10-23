@@ -44,9 +44,18 @@ def render_panel(result: EvaluationResult, summary: Optional[TelemetrySummary]) 
         The full panel ready to print.
     """
     line = "=" * _PANEL_WIDTH
-    # Visual marker for the latency target.
-    latency_flag = "OK " if result.within_latency_target else "SLOW"
     fallback_flag = "YES (Human-in-the-Loop)" if result.trigger_fallback else "no"
+
+    # Latency: prefer the model's own compute time (server_latency_ms) when the
+    # real Decider answered; fall back to the local round-trip otherwise. The
+    # reference target (115ms) is the published figure on GPU, shown honestly as
+    # a reference rather than as a pass/fail on the current (possibly CPU) host.
+    if result.server_latency_ms is not None:
+        latency_label = "Model latency  "
+        latency_value = result.server_latency_ms
+    else:
+        latency_label = "Decision latency"
+        latency_value = result.decision_latency_ms
 
     rows = [
         line,
@@ -55,7 +64,7 @@ def render_panel(result: EvaluationResult, summary: Optional[TelemetrySummary]) 
         f" Classified action : {result.action_type}",
         f" Narrative branch  : {result.target_branch}",
         f" Confidence        : {result.confidence_score:6.1%} {_bar(result.confidence_score)}",
-        f" Decision latency  : {result.decision_latency_ms:7.2f} ms  (target < {LATENCY_TARGET_MS:.0f} ms) [{latency_flag}]",
+        f" {latency_label:<17}: {latency_value:9.2f} ms  (GPU reference ~{LATENCY_TARGET_MS:.0f} ms)",
         f" Decision via      : {result.decision_source}",
         f" Narrative via     : {result.narrative_source}",
         f" Fallback          : {fallback_flag}",

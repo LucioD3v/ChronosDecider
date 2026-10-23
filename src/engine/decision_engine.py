@@ -29,11 +29,12 @@ class EvaluationResult:
     """Complete result of a turn, ready for the UI and telemetry."""
 
     payload: Dict[str, Any]              # Output validated against the schema.
-    decision_latency_ms: float           # Latency of the DECISION only (target <100ms).
-    within_latency_target: bool          # Did the decision meet the target?
+    decision_latency_ms: float           # Local round-trip latency of the decision.
+    within_latency_target: bool          # Did the local latency meet the target?
     decision_source: str                 # 'strands-decider' or 'simulated'.
     narrative_source: str                # 'bedrock' or 'template'.
     clarification_prompt: Optional[str] = None  # Present if there is a fallback.
+    server_latency_ms: Optional[float] = None   # Model compute time reported by the server.
 
     @property
     def action_type(self) -> str:
@@ -144,6 +145,7 @@ class DecisionEngine:
             decision_source=decision.source,
             narrative_source=narrative_source,
             clarification_prompt=clarification_prompt,
+            server_latency_ms=decision.server_latency_ms,
         )
 
     def _build_clarification_prompt(self, player_input: str, confidence: float) -> str:
