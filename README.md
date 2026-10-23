@@ -1,5 +1,4 @@
 # ChronosDecider: The Narrative Time Weaver
-# ChronosDecider: The Narrative Time Weaver
 
 ### A real-time RPG Game Master that knows when it doesn't know
 
