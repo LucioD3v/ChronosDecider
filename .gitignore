@@ -33,3 +33,6 @@ _smoke_test.py
 
 # Telemetry exported at runtime (do not version)
 chronosdecider_telemetry_*.json
+
+# Hackathon submission material (kept locally, not versioned)
+submission/
