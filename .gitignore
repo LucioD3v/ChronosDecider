@@ -30,3 +30,6 @@ Thumbs.db
 # Logs y temporales
 *.log
 _smoke_test.py
+
+# Telemetría exportada en runtime (no versionar)
+chronosdecider_telemetry_*.json

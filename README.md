@@ -1,8 +1,13 @@
 # ChronosDecider
 
-**Game Master agéntico en tiempo real** que usa **Strands Decider 2B** para decidir
-la rama narrativa de un RPG y **Amazon Bedrock** para narrarla. Objetivo de la
-decisión: sub-100ms.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-unittest-brightgreen.svg)](tests/)
+[![Dependencies](https://img.shields.io/badge/deps-stdlib%20only-success.svg)](#requisitos)
+[![Strands Decider 2B](https://img.shields.io/badge/model-strands--decider--2b-orange.svg)](https://github.com/strands-labs/strands-decider)
+[![Amazon Bedrock](https://img.shields.io/badge/AWS-Bedrock-FF9900.svg)](https://aws.amazon.com/bedrock/)
+
+ChronosDecider es un Game Master ultrarrapido para RPG en tiempo real: convierte cada accion del jugador en una decision narrativa calibrada. Strands Decider 2B elige la rama de la historia con una confianza medible en milisegundos, y Amazon Bedrock la narra. Cuando la confianza baja del umbral, el agente no improvisa: activa un guardrail Human-in-the-Loop y pide aclaracion. Motor de decision que separa decidir de generar con telemetria de latencia y certeza viva.
 
 > Submission para la **Agent Experience Hackathon: Strands Decider**.
 > Patrón de decisión demostrado: **Tool selection** (`#tool-selection`).
@@ -27,28 +32,20 @@ modelo ([Strands Decider no genera texto](https://github.com/strands-labs/strand
 
 ## Arquitectura
 
+```mermaid
+flowchart TD
+    A[Acción del jugador<br/>texto libre] --> D{{"Strands Decider 2B<br/>pregunta choice · ~115ms"}}
+    D -->|target_branch + confidence_score| T{¿confidence &gt; 0.70?}
+    T -->|sí| B["Amazon Bedrock<br/>genera la narrativa"]
+    T -->|no| H["Fallback Human-in-the-Loop<br/>pide aclaración · no actúa"]
+    B --> TEL[["Telemetría<br/>latencia de decisión + historial de confianza"]]
+    H --> TEL
+    TEL --> E[/"Exportar sesión a JSON"/]
 ```
-Acción del jugador
-        │
-        ▼
-┌───────────────────────┐
-│  Strands Decider 2B   │  pregunta "choice": ¿qué rama narrativa?
-│  (decisión, ~115ms)   │  → target_branch + confidence_score
-└───────────┬───────────┘
-            │
-            ▼
-   ¿confidence > 0.70?
-       │          │
-   sí  │          │ no
-       ▼          ▼
-┌─────────────┐  ┌──────────────────────────┐
-│   Bedrock   │  │  Fallback Human-in-the-Loop │
-│ (narrativa) │  │  pide aclaración, no actúa  │
-└─────────────┘  └──────────────────────────┘
-       │
-       ▼
-   Telemetría (latencia de la decisión + historial de confianza)
-```
+
+- **Decisión** (Strands Decider 2B): elige la rama, no genera texto.
+- **Generación** (Amazon Bedrock): narra solo cuando la decisión es fiable.
+- **Guardrail**: confianza `<= 0.70` ⇒ no se narra, se pide aclaración.
 
 ## Requisitos
 
@@ -169,6 +166,8 @@ ChronosDecider/
 │   ├── telemetry/                # Latencia por decisión + historial de confianza
 │   └── ui/                       # Demo RPG + panel de métricas en tiempo real
 ├── decision_patterns/            # Patrón de decisión reutilizable (entregable)
+├── scripts/
+│   └── benchmark.py              # Benchmark de latencia y distribución de confianza
 ├── tests/                        # Suite unittest (sin dependencias externas)
 └── .kiro/steer/                  # Arquitectura y esquema (leídos en runtime)
 ```
@@ -187,6 +186,44 @@ Modo de ejecución según lo que tengas configurado:
 
 Escribe acciones como `atacar al goblin`, `hablar con el mercader`, `explorar la
 cueva`. Las acciones ambiguas disparan la aclaración (Human-in-the-Loop).
+
+**Comandos dentro de la demo:**
+
+| Comando | Acción |
+| --- | --- |
+| `ayuda` / `help` / `?` | Muestra la ayuda y ejemplos. |
+| `export` / `exportar` | Guarda las métricas de la sesión actual en un archivo JSON. |
+| `salir` / `quit` / `exit` | Termina la demo. |
+
+## Exportar telemetría
+
+Durante la demo, el comando `export` escribe un JSON con el resumen agregado y el
+historial completo de la sesión (latencia y confianza por turno, con timestamps):
+
+```
+[EXPORT] Métricas de la sesión guardadas en: .../chronosdecider_telemetry_<stamp>.json
+```
+
+Programáticamente:
+
+```python
+engine.telemetry.export_json("telemetria.json")   # o .to_dict() para un dict
+```
+
+## Benchmark
+
+Mide latencia de decisión y distribución de confianza con el backend simulado
+determinista (no requiere servidor del modelo ni Bedrock):
+
+```bash
+python scripts/benchmark.py            # reporte de texto (1000 iteraciones)
+python scripts/benchmark.py -n 5000    # nº de iteraciones personalizado
+python scripts/benchmark.py --json     # salida JSON para CI/dashboards
+```
+
+Reporta media/mín/máx y percentiles **p50/p90/p95/p99** de latencia, el
+porcentaje dentro del objetivo `<100ms`, un histograma del `confidence_score` y
+el porcentaje de turnos que activaron el fallback.
 
 ## Tests
 

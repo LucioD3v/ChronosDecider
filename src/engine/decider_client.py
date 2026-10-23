@@ -20,6 +20,7 @@ El servidor real se levanta con:
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.error
 import urllib.request
@@ -39,6 +40,36 @@ _BRANCH_QUESTION = "narrative_branch"
 _BRANCH_INSTRUCTIONS = (
     "Dada la acción del jugador, elige la rama narrativa del RPG que corresponde."
 )
+
+
+def _safe_confidence(value: Any) -> float:
+    """Normaliza un confidence_score potencialmente malformado a [0.0, 1.0].
+
+    Resiliencia: una respuesta del modelo con confianza None, no numérica, NaN,
+    infinita o fuera de rango NO debe propagar una excepción. Se colapsa a un
+    valor seguro que, al ser bajo, activa el fallback Human-in-the-Loop.
+    """
+    try:
+        conf = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(conf) or math.isinf(conf):
+        return 0.0
+    # Recorta al rango válido en vez de rechazar: un 1.2 se trata como 1.0.
+    return max(0.0, min(1.0, conf))
+
+
+def _safe_latency(value: Any) -> float | None:
+    """Normaliza la latencia reportada por el servidor; None si es inválida."""
+    if value is None:
+        return None
+    try:
+        lat = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(lat) or math.isinf(lat) or lat < 0:
+        return None
+    return lat
 
 
 @dataclass
@@ -156,10 +187,10 @@ class StrandsDeciderHTTPBackend:
         return DecisionResult(
             branch_id=branch_id,
             action_type=action_type,
-            confidence_score=float(confidence if confidence is not None else 0.0),
+            confidence_score=_safe_confidence(confidence),
             source="strands-decider",
             decision_latency_ms=latency_ms,
-            server_latency_ms=payload.get("latency_ms"),
+            server_latency_ms=_safe_latency(payload.get("latency_ms")),
             raw=payload,
         )
 
@@ -223,12 +254,38 @@ class DeciderClient:
         self._primary: DeciderBackend = backend or StrandsDeciderHTTPBackend()
 
     def decide(self, player_input: str) -> DecisionResult:
-        """Decide la rama narrativa para la acción del jugador."""
+        """Decide la rama narrativa para la acción del jugador.
+
+        Resiliencia: si el backend primario falla por CUALQUIER motivo (servidor
+        caído, timeout, JSON malformado, forma de respuesta inesperada), se
+        degrada al backend simulado en vez de propagar y tumbar la UI. La única
+        excepción es cuando el usuario inyectó un backend explícito o desactivó
+        el fallback: en ese caso el error se propaga para no ocultarlo en tests.
+        """
         options = list(NARRATIVE_BRANCHES.keys())
         try:
-            return self._primary.decide_branch(player_input, options)
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError):
-            # Servidor del modelo no disponible o respuesta inesperada.
+            result = self._primary.decide_branch(player_input, options)
+        except Exception:
             if self._explicit_backend is not None or not self._allow_fallback:
                 raise
             return self._simulated.decide_branch(player_input, options)
+
+        # Blindaje extra: si el backend devolvió una decisión inconsistente
+        # (rama fuera del catálogo, confianza malformada), la saneamos a una
+        # decisión de baja certeza que activará el fallback Human-in-the-Loop.
+        return self._sanitize(result)
+
+    @staticmethod
+    def _sanitize(result: DecisionResult) -> DecisionResult:
+        """Garantiza que el DecisionResult es consistente y seguro de usar.
+
+        `clarify` es una rama legítima (la señal explícita de "no fiable"), así
+        que se respeta. Cualquier OTRA rama fuera del catálogo se reconduce a
+        `clarify` con confianza 0.0 para forzar el fallback de forma segura.
+        """
+        result.confidence_score = _safe_confidence(result.confidence_score)
+        if result.branch_id != "clarify" and result.branch_id not in NARRATIVE_BRANCHES:
+            result.branch_id = "clarify"
+            result.action_type = "UNKNOWN"
+            result.confidence_score = 0.0
+        return result

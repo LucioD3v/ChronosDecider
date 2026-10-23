@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 from ..config import CONFIDENCE_FALLBACK_THRESHOLD, LATENCY_TARGET_MS
 from ..telemetry import TelemetryPanel
 from .decider_client import DeciderClient, DecisionResult
-from .narrator import Narrator, build_default_narrator
+from .narrator import Narrator, TemplateNarrator, build_default_narrator
 from .schema_validator import validate_narrative_output
 
 
@@ -70,6 +70,9 @@ class DecisionEngine:
         self._narrator = narrator or build_default_narrator()
         self._telemetry = telemetry or TelemetryPanel()
         self._fallback_threshold = fallback_threshold
+        # Narrador de último recurso, siempre disponible, para resiliencia en
+        # caso de que el narrador principal lance en tiempo de ejecución.
+        self._fallback_narrator = TemplateNarrator()
 
     @property
     def telemetry(self) -> TelemetryPanel:
@@ -97,11 +100,20 @@ class DecisionEngine:
             clarification_prompt = self._build_clarification_prompt(player_input, confidence)
         else:
             # 3) GENERACIÓN con Bedrock (o plantilla de fallback).
+            # Resiliencia: si el narrador falla en runtime (p. ej. Bedrock lanza
+            # por throttling o credenciales), NO tumbamos el turno; degradamos a
+            # una narración de plantilla local y lo señalamos en la fuente.
             target_branch = f"branch.{decision.branch_id}"
-            narrative_response = self._narrator.narrate(
-                player_input, decision.branch_id, decision.action_type
-            )
-            narrative_source = self._narrator.source
+            try:
+                narrative_response = self._narrator.narrate(
+                    player_input, decision.branch_id, decision.action_type
+                )
+                narrative_source = self._narrator.source
+            except Exception:
+                narrative_response = self._fallback_narrator.narrate(
+                    player_input, decision.branch_id, decision.action_type
+                )
+                narrative_source = f"{getattr(self._narrator, 'source', 'desconocido')}->template(error)"
 
         # 4) Construir y VALIDAR el payload contra el esquema narrativo.
         payload: Dict[str, Any] = {

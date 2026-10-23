@@ -13,10 +13,13 @@ opcional para no crecer sin límite en sesiones largas.
 
 from __future__ import annotations
 
+import json
 import time
 from collections import deque
-from dataclasses import dataclass
-from typing import Deque, List, Optional
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Deque, Dict, List, Optional
 
 from ..config import LATENCY_TARGET_MS
 
@@ -127,3 +130,52 @@ class TelemetryPanel:
     def reset(self) -> None:
         """Vacía el historial de telemetría."""
         self._records.clear()
+
+    # --- Exportación --------------------------------------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        """Serializa la sesión de telemetría a un dict JSON-compatible.
+
+        Incluye metadatos de exportación, el resumen agregado y el historial
+        completo de registros (con su timestamp epoch e ISO-8601 para lectura).
+        """
+        summary = self.summary()
+        records: List[Dict[str, Any]] = []
+        for r in self._records:
+            row = asdict(r)
+            # Añadimos campos derivados útiles al leer el JSON fuera del proceso.
+            row["timestamp_iso"] = datetime.fromtimestamp(
+                r.timestamp, tz=timezone.utc
+            ).isoformat()
+            row["within_latency_target"] = r.within_latency_target
+            records.append(row)
+
+        return {
+            "exported_at": datetime.now(tz=timezone.utc).isoformat(),
+            "latency_target_ms": LATENCY_TARGET_MS,
+            "summary": asdict(summary) if summary is not None else None,
+            "records": records,
+        }
+
+    def export_json(self, path: Optional[str] = None, indent: int = 2) -> Path:
+        """Escribe la sesión de telemetría a un archivo JSON y devuelve su ruta.
+
+        Args:
+            path: ruta de salida. Si es None, se genera un nombre con timestamp
+                en el directorio de trabajo actual.
+            indent: sangría del JSON para legibilidad.
+
+        Returns:
+            La ruta (`Path`) del archivo escrito.
+        """
+        if path is None:
+            stamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            path = f"chronosdecider_telemetry_{stamp}.json"
+        out = Path(path)
+        # Crea el directorio padre si se indicó una ruta anidada.
+        if out.parent and not out.parent.exists():
+            out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(self.to_dict(), ensure_ascii=False, indent=indent),
+            encoding="utf-8",
+        )
+        return out

@@ -21,6 +21,7 @@ from ..telemetry import TelemetryPanel, TelemetrySummary
 # Comandos de control de la demo (no se envían al motor).
 _QUIT_COMMANDS = {"salir", "quit", "exit", ":q"}
 _HELP_COMMANDS = {"ayuda", "help", "?"}
+_EXPORT_COMMANDS = {"export", "exportar", ":e"}
 
 _PANEL_WIDTH = 60
 
@@ -94,6 +95,7 @@ class RPGConsoleApp:
               f"certeza <= {CONFIDENCE_FALLBACK_THRESHOLD:.0%}")
         print(" Escribe una acción (p. ej. 'atacar al goblin', 'explorar la sala').")
         print(f" Comandos: {', '.join(sorted(_HELP_COMMANDS))} | "
+              f"{', '.join(sorted(_EXPORT_COMMANDS))} | "
               f"{', '.join(sorted(_QUIT_COMMANDS))}")
         print("=" * _PANEL_WIDTH)
 
@@ -103,7 +105,21 @@ class RPGConsoleApp:
         print("  - hablar con el mercader")
         print("  - explorar la cueva")
         print("  - huir del combate")
-        print("Las acciones ambiguas activan la aclaración (Human-in-the-Loop).\n")
+        print("Las acciones ambiguas activan la aclaración (Human-in-the-Loop).")
+        print("Escribe 'export' para guardar las métricas de la sesión en JSON.\n")
+
+    def _export(self) -> None:
+        """Exporta la telemetría de la sesión actual a un archivo JSON."""
+        if self._telemetry.summary() is None:
+            print("\n[EXPORT] Aún no hay métricas que exportar. "
+                  "Juega al menos un turno primero.\n")
+            return
+        try:
+            ruta = self._telemetry.export_json()
+        except OSError as exc:
+            print(f"\n[EXPORT] No se pudo escribir el archivo: {exc}\n")
+            return
+        print(f"\n[EXPORT] Métricas de la sesión guardadas en: {ruta.resolve()}\n")
 
     def run_turn(self, player_input: str) -> EvaluationResult:
         """Procesa un turno: evalúa la acción y devuelve el resultado.
@@ -129,6 +145,9 @@ class RPGConsoleApp:
                 return
             if command in _HELP_COMMANDS:
                 self._help()
+                continue
+            if command in _EXPORT_COMMANDS:
+                self._export()
                 continue
             if not player_input:
                 # Entrada vacía: el motor la clasificará como baja certeza y
